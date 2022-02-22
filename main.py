@@ -1,8 +1,7 @@
-import asyncio
-from typing import Union, List
-
-import aiohttp
 import json
+import pika
+from typing import Union, List
+import aiohttp
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -71,7 +70,8 @@ class ApiSync:
 
         return True
 
-    def check_params(self, method_params: dict, params: Union[dict, list]):
+    @staticmethod
+    def check_params(method_params: dict, params: Union[dict, list]):
         r"""
         Валидация параметров.
         :param method_params Параметры метода api
@@ -79,7 +79,6 @@ class ApiSync:
         :raise AssertionError
         :raise RequireParamNotSet
         """
-
 
         def check_param(param: dict):
             for method_param, requirements in method_params['Params'].items():
@@ -114,9 +113,10 @@ class ApiSync:
     def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
         r"""
             Запрос на определенный метод сервиса
-        :arg method Метод отправки
-        :arg params Параметры, может быть набором параметров
+            :arg method Метод отправки
+            :arg params Параметры, может быть набором параметров
         """
+
         def make_single_request(param):
             config = method['Config']
             url = f"http://{config['HTTPaddress']}:{config['HTTPport']}{config['HTTPconnstring']}"
@@ -141,10 +141,32 @@ class ApiSync:
 
         raise ValueError
 
-    def make_request_api_amqp(self, method, params):
-        pass
+    @staticmethod
+    def make_request_api_amqp(method, params: Union[List[dict], dict]) -> None:
 
-    def find_method(self, method_name, service_schema):
+        credentials = pika.PlainCredentials(method['config']['AMQPusername'],
+                                            method['config']['AMQPpassword'])
+        connection = pika.BlockingConnection(pika.ConnectionParameters(
+            host=method['config']['address'], virtual_host='/',
+            credentials=credentials,
+            port=method['config']['AMQPport']))
+
+        channel = connection.channel()
+        channel.queue_declare(queue=method['config']['AMQPquenue'])
+        if isinstance(params, dict):
+            channel.basic_publish(exchange=method['config']['AMQPexchange'],
+                                  routing_key=method['config']['AMQPquenue'],
+                                  body=bytes(json.dumps(params), 'utf-8'))
+        elif isinstance(params, list):
+            for param in params:
+                channel.basic_publish(exchange=method['config']['AMQPexchange'],
+                                      routing_key=method['config']['AMQPquenue'],
+                                      body=bytes(json.dumps(param), 'utf-8'))
+        channel.close()
+        connection.close()
+
+    @staticmethod
+    def find_method(method_name, service_schema):
         """ Поиск метода в схеме, возвращает метод с типом подключения """
         for key, value in service_schema.items():
             if 'methods' not in value:
