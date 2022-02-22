@@ -34,7 +34,7 @@ class ApiSync:
             raise ServiceNotFound
         method = self.find_method(method_name, self.schema[requested_service])
         self.check_params(method, params)
-        self.check_method_available(method, self.schema[requested_service])
+        self.check_method_available(method, self.schema[self.service_name], requested_service)
 
         if method['TypeConnection'] == 'HTTP':
             return self.make_request_api_http(method, params)
@@ -43,25 +43,26 @@ class ApiSync:
             return self.make_request_api_amqp(method, params)
 
     @staticmethod
-    def check_method_available(method, service_schema, service_name):
+    def check_method_available(method, curr_service_schema, parent_service_name):
         """ Проверка доступности метода """
-        if 'RLS' not in service_schema:
+
+        if 'RLS' not in curr_service_schema:
             return True
 
-        if 'allowed' not in service_schema['RLS'] \
-                and 'disallowed' not in service_schema['RLS']:
+        if parent_service_name not in curr_service_schema['RLS']:
+            return ServiceMethodNotAllowed
+
+        if 'allowed' not in curr_service_schema['RLS'] \
+                and 'disallowed' not in curr_service_schema['RLS']:
             return True
 
-        if service_name not in service_schema['RLS']:
-            return True
-
-        if 'allowed' in service_schema['RLS'][service_name] \
-                and len(service_schema['RLS'][service_name]['RLS']['allowed']):
-            if method not in service_schema['RLS'][service_name]:
+        if 'allowed' in curr_service_schema['RLS'][parent_service_name] \
+                and len(curr_service_schema['RLS'][parent_service_name]['RLS']['allowed']):
+            if method not in curr_service_schema['RLS'][parent_service_name]:
                 raise ServiceMethodNotAllowed
-        elif 'disallowed' in service_schema['RLS'][service_name] \
-                and service_schema['RLS'][service_name]['disallowed']:
-            if method in service_schema['RLS'][service_name]['disallowed']:
+        elif 'disallowed' in curr_service_schema['RLS'][parent_service_name] \
+                and curr_service_schema['RLS'][parent_service_name]['disallowed']:
+            if method in curr_service_schema['RLS'][parent_service_name]['disallowed']:
                 raise ServiceMethodNotAllowed
         else:
             raise ServiceMethodNotAllowed
@@ -107,7 +108,8 @@ class ApiSync:
 
         return True
 
-    def make_request_api_http(self, method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
+    @staticmethod
+    def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
         r"""
             Запрос на определенный метод сервиса
             :arg method Метод отправки
@@ -116,10 +118,7 @@ class ApiSync:
 
         def make_single_request(param):
             config = method['Config']
-            param['id'] = str(uuid.uuid4())
-            param['service_callback'] = self.service_name
-            param['method'] = method['MethodName']
-            url = f"http://{config['address']}:{config['port']}{config['connstring']}"
+            url = f"http://{config['address']}:{config['port']}{config['connstring']}{method['MethodName']}"
             if config['auth']:
                 auth = HTTPBasicAuth(config['username'],
                                      config['password'])
@@ -141,8 +140,7 @@ class ApiSync:
 
         raise ValueError
 
-    @staticmethod
-    def make_request_api_amqp(method, params: Union[List[dict], dict]) -> bool:
+    def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> bool:
 
         credentials = pika.PlainCredentials(method['config']['username'],
                                             method['config']['password'])
@@ -156,15 +154,20 @@ class ApiSync:
         channel.exchange_declare(exchange=method['config']['exchange'])
         # !!! нужно биндить очередь к обменнику
         channel.queue_bind(method['config']['quenue'], method['config']['exchange'])
-        if isinstance(params, dict):
+
+        def send_message(_param):
+            _param['id'] = str(uuid.uuid4())
+            _param['service_callback'] = self.service_name
+            _param['method'] = method['MethodName']
             channel.basic_publish(exchange=method['config']['exchange'],
                                   routing_key=method['config']['quenue'],
                                   body=bytes(json.dumps(params), 'utf-8'))
+
+        if isinstance(params, dict):
+            send_message(params)
         elif isinstance(params, list):
             for param in params:
-                channel.basic_publish(exchange=method['config']['exchange'],
-                                      routing_key=method['config']['quenue'],
-                                      body=bytes(json.dumps(param), 'utf-8'))
+                send_message(param)
         channel.close()
         connection.close()
 
@@ -186,7 +189,7 @@ class ApiSync:
                 for method_key, method_value in value['methods']['read'].items():
                     if method_key == method_name:
                         method = {'Params': method_value.copy(), 'TypeConnection': key, 'TypeMethod': 'write',
-                                  'Config': value['config']}
+                                  'Config': value['config'], 'MethodName': method_name}
                         return method
 
         raise MethodNotFound

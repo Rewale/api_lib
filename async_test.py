@@ -25,6 +25,7 @@ test_messages = [
 ]
 
 
+# TODO: Необходимые тесты: несколько http-запросов
 def test_multiple_rabbit_messages():
     loop.run_until_complete(api.make_request_api_amqp(test_method,
                                                       test_messages))

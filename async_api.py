@@ -66,7 +66,7 @@ class ApiAsync(object):
                                          config['password'])
             else:
                 auth = None
-
+            # TODO: создавать сессию единожды!
             if config['type'] == 'POST':
                 async with aiohttp.ClientSession(auth=auth) as session:
                     async with session.post(url, data=param) as resp:
