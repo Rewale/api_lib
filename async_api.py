@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 from typing import Union, List
 
@@ -174,16 +175,17 @@ class ApiAsync(object):
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
 
-    async def read_redis(self, uuid_correlation) -> dict:
+    async def read_redis(self, uuid_correlation, timeout=3) -> dict:
         """ Читаем из редиса пока результат равен null"""
-        self.redis: Redis
+        start_time = time.monotonic()
         if self.redis is None:
             self.redis_connection(self.redis_url)
 
         res = await self.redis.get(uuid_correlation)
         while res is None:
             res = await self.redis.get(uuid_correlation)
-
+            if (time.monotonic() - start_time) >= timeout:
+                raise TimeoutError
         return json.loads(res)
 
     @staticmethod

@@ -1,6 +1,6 @@
+from async_api import ApiAsync
 from sync_api import ApiSync
 import custom_exceptions
-
 
 api_client = ApiSync('GPSPROGR')
 
@@ -51,6 +51,23 @@ def test_check_params_require_param_not_set():
 
 def test_check_params_require_param_not_exist():
     try:
-        api_client.send_request_api('getApiStruct', {'format': '4444', 'fio': '123'}, 'API', False)
+        api_client.send_request_api('getApiStruct', {'fio': '123', 'format': '4444'}, 'API', False)
     except custom_exceptions.ParamNotFound:
         assert True
+
+
+def test_amqp():
+    test_method = {
+        'config': {
+            'username': 'guest',
+            'password': 'guest',
+            'address': '192.168.0.216',
+            'port': 5672,
+            'virtualhost': '',
+            'exchange': 'testExchange',
+            'quenue': 'testQuenue'
+        },
+        'MethodName': 'test'
+    }
+
+    assert ApiAsync.amqp_url_from_method(method=test_method) == 'amqp://guest:guest@192.168.0.216:5672/'
