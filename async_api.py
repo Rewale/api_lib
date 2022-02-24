@@ -1,15 +1,13 @@
 import asyncio
-import datetime
 import json
 import uuid
 from typing import Union, List
+
 import aio_pika
 import aiohttp
+
+from custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
-from custom_exceptions import (MethodNotFound,
-                               ServiceNotFound,
-                               ServiceMethodNotAllowed,
-                               RequireParamNotSet)
 
 
 class ApiAsync(object):
