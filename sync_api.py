@@ -22,7 +22,8 @@ class ApiSync:
 
     def __init__(self, service_name: str):
         r"""
-        :param service_name: Название текущего сервиса
+        Args:
+            service_name: Название текущего сервиса
         """
         self.schema = None
         self.service_name = service_name
@@ -34,6 +35,22 @@ class ApiSync:
 
     def send_request_api(self, method_name: str,
                          params: Union[dict, List[dict]], requested_service: str, wait_answer: bool):
+        r"""
+        Проверка доступности метода
+
+        Args:
+           method_name: имя метод апи.
+           params: Схема апи текущего сервиса.
+           requested_service: Имя сервиса - адресата.
+           wait_answer: дожидаться ответа[Не используется]
+        Raises:
+           ServiceMethodNotAllowed - Метод сервиса не доступен из текущего метода.
+           AssertionError - тип параметра не соответствует типу в методе.
+           RequireParamNotSet - не указан обязательный параметр.
+           ParamNotFound - параметр не найден
+        Returns:
+           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или айдишники сообщений (или сообщения, в зависимости от params) - при AMQP
+        """
         if requested_service not in self.schema:
             raise ServiceNotFound
         method = self.find_method(method_name, self.schema[requested_service])
@@ -47,26 +64,37 @@ class ApiSync:
             return self.make_request_api_amqp(method, params)
 
     @staticmethod
-    def check_method_available(method, curr_service_schema, parent_service_name):
-        """ Проверка доступности метода """
+    def check_method_available(method, curr_service_schema, requested_service):
+        r"""
+        Проверка доступности метода
+
+        Args:
+            method: метод апи.
+            curr_service_schema: Схема апи текущего сервиса.
+            requested_service: Имя сервиса - адресата.
+        Raises:
+            ServiceMethodNotAllowed - Метод сервиса не доступен из текущего метода.
+        Return:
+            Всегда true - иначе исключение
+        """
 
         if 'RLS' not in curr_service_schema:
             return True
 
-        if parent_service_name not in curr_service_schema['RLS']:
+        if requested_service not in curr_service_schema['RLS']:
             return ServiceMethodNotAllowed
 
         if 'allowed' not in curr_service_schema['RLS'] \
                 and 'disallowed' not in curr_service_schema['RLS']:
             return True
 
-        if 'allowed' in curr_service_schema['RLS'][parent_service_name] \
-                and len(curr_service_schema['RLS'][parent_service_name]['RLS']['allowed']):
-            if method not in curr_service_schema['RLS'][parent_service_name]:
+        if 'allowed' in curr_service_schema['RLS'][requested_service] \
+                and len(curr_service_schema['RLS'][requested_service]['RLS']['allowed']):
+            if method not in curr_service_schema['RLS'][requested_service]:
                 raise ServiceMethodNotAllowed
-        elif 'disallowed' in curr_service_schema['RLS'][parent_service_name] \
-                and curr_service_schema['RLS'][parent_service_name]['disallowed']:
-            if method in curr_service_schema['RLS'][parent_service_name]['disallowed']:
+        elif 'disallowed' in curr_service_schema['RLS'][requested_service] \
+                and curr_service_schema['RLS'][requested_service]['disallowed']:
+            if method in curr_service_schema['RLS'][requested_service]['disallowed']:
                 raise ServiceMethodNotAllowed
         else:
             raise ServiceMethodNotAllowed
@@ -76,13 +104,18 @@ class ApiSync:
     @staticmethod
     def check_params(method_params: dict, params: Union[dict, list]):
         r"""
-        Валидация параметров.
-        :param method_params Параметры метода api
-        :param params Передаваемые параметры в api
-        :raise AssertionError
-        :raise RequireParamNotSet
-        """
+        Валидация параметров
 
+        Args:
+            method_params: Параметры метода api.
+            params: Передаваемые параметры в api.
+        Raises:
+            AssertionError - тип параметра не соответствует типу в методе.
+            RequireParamNotSet - не указан обязательный параметр.
+            ParamNotFound - параметр не найден
+        Return:
+            Всегда true - иначе исключение
+        """
         def check_param(param: dict):
 
             for method_param, requirements in method_params['Params'].items():
@@ -119,9 +152,14 @@ class ApiSync:
     @staticmethod
     def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
         r"""
-            Запрос на определенный метод сервиса.
-            :arg method Метод отправки.
-            :arg params Параметры, может быть набором параметров.
+        Запрос на определенный метод сервиса через http.
+
+        Args:
+            method (dict): Метод отправки.
+            params (List[dict], dict): Параметры, может быть набором параметров.
+
+        Returns:
+            str, list: Ответ сообщений (или сообщения, в зависимости от params)
         """
 
         def make_single_request(param):
@@ -150,8 +188,14 @@ class ApiSync:
 
     def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> Union[str, List[str]]:
         r"""
-            Отправка через кролика.
-            Возвращает id сообщения или массив id сообщений
+        Запрос на определенный метод сервиса через кролика.
+
+        Args:
+            method (dict): Метод отправки.
+            params (List[dict], dict): Параметры, может быть набором параметров.
+
+        Returns:
+            str, list: Айдишники сообщений (или сообщения, в зависимости от params)
         """
         credentials = pika.PlainCredentials(method['config']['username'],
                                             method['config']['password'])

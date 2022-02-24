@@ -18,18 +18,39 @@ class ApiAsync(object):
     channel: aio_pika.Channel = None
 
     @classmethod
-    async def create_api_async(cls, service_name):
-        """ Создание экземпляра класса """
+    async def create_api_async(cls, service_name: str):
+        r"""
+         Создание экземпляра класса
+
+         Args:
+              service_name(str): Название текущего сервиса
+         """
         self = ApiAsync(service_name)
         await self.get_schema()
         return self
 
     def __init__(self, service_name: str):
+        """ Низя. Создание объекта через create_api_async """
         self.service_name = service_name
         self.schema = None
 
     def send_request_api(self, method_name: str,
-                         params: Union[dict, List[dict]], requested_service: str, wait_answer: bool):
+                         params: Union[dict, List[dict]], requested_service: str):
+        r"""
+        Проверка доступности метода
+
+        Args:
+           method_name: имя метод апи.
+           params: Схема апи текущего сервиса.
+           requested_service: Имя сервиса - адресата.
+        Raises:
+           ServiceMethodNotAllowed - Метод сервиса не доступен из текущего метода.
+           AssertionError - тип параметра не соответствует типу в методе.
+           RequireParamNotSet - не указан обязательный параметр.
+           ParamNotFound - параметр не найден
+        Returns:
+           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или айдишники сообщений (или сообщения, в зависимости от params) - при AMQP
+        """
         if requested_service not in self.schema:
             raise ServiceNotFound
         method = ApiSync.find_method(method_name, self.schema[requested_service])
@@ -54,9 +75,13 @@ class ApiAsync(object):
     @staticmethod
     async def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
         r"""
-            Запрос на определенный метод сервиса
-            :arg method Метод отправки
-            :arg params Параметры, может быть набором параметров
+        Запрос на определенный метод сервиса через кролика.
+
+        Args:
+            method (dict): Метод отправки.
+            params (List[dict], dict): Параметры, может быть набором параметров.
+        Returns:
+            str, list: Ответы сообщений (или сообщения, в зависимости от params)
         """
 
         async def make_single_request(param):
@@ -88,7 +113,20 @@ class ApiAsync(object):
     async def make_request_api_amqp(self,
                                     method, params: Union[List[dict], dict],
                                     close_connection: bool = True,
-                                    use_open_connection: bool = False):
+                                    use_open_connection: bool = False) -> Union[str, list]:
+        r"""
+        Запрос на определенный метод сервиса через кролика.
+
+        Args:
+            method (dict): Метод отправки.
+            params (List[dict], dict): Параметры, может быть набором параметров.
+            close_connection (bool): Закрыть соединение после отправки сообщений
+            use_open_connection (bool): Использовать открытое соединение
+
+
+        Returns:
+            str, list: Айдишники сообщений (или сообщения, в зависимости от params)
+        """
         if not use_open_connection or self.connection.is_closed:
             await self.make_connection(method['config']['username'],
                                        method['config']['password'],
