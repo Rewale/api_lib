@@ -1,6 +1,6 @@
 import asyncio
 import json
-
+import redis_read_worker
 from async_api import ApiAsync
 
 loop = asyncio.get_event_loop()
@@ -12,6 +12,7 @@ test_method = {
         'password': 'guest',
         'address': '192.168.0.216',
         'port': 5672,
+        'virtualhost': '',
         'exchange': 'testExchange',
         'quenue': 'testQuenue'
     },
@@ -92,3 +93,30 @@ def test_single_rabbit_messages():
     id = loop.run_until_complete(api.make_request_api_amqp(test_method,
                                                            test_messages[0]))
     assert id
+
+
+def test_read_redis():
+    import redis_read_worker
+    # Создаем в фоне задачу на чтение определенной очереди и запись в редис
+    loop.create_task(redis_read_worker.start_listening('testQuenue', ApiAsync.amqp_url_from_method(test_method)))
+
+    # Отправляем в эту же очередь сообщение
+    id = loop.run_until_complete(api.make_request_api_amqp(test_method,
+                                                           test_messages[0]))
+    # Читаем из редис наличие сообщения
+    callback_message = loop.run_until_complete(asyncio.wait_for(api.read_redis(id), 3))
+
+    assert callback_message
+
+
+def test_read_redis_timeout():
+
+    # Создаем в фоне задачу на чтение определенной очереди и запись в редис
+    loop.create_task(redis_read_worker.start_listening('testQuenue', ApiAsync.amqp_url_from_method(test_method)))
+    # Читаем из редис наличие сообщения
+    id = "test_id"
+    try:
+        callback_message = loop.run_until_complete(asyncio.wait_for(api.read_redis(id), 1))
+    except asyncio.TimeoutError:
+        assert True
+    loop.close()
