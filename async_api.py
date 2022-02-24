@@ -5,6 +5,8 @@ from typing import Union, List
 
 import aio_pika
 import aiohttp
+import aioredis
+from aioredis import Redis
 
 from custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
@@ -16,19 +18,23 @@ class ApiAsync(object):
     channel: aio_pika.Channel = None
 
     @classmethod
-    async def create_api_async(cls, service_name: str):
+    async def create_api_async(cls, service_name: str, redis_url: str = "redis://localhost"):
         r"""
          Создание экземпляра класса
 
          Args:
               service_name(str): Название текущего сервиса
+              redis_url(str): Строка подключения для чтения редис
          """
-        self = ApiAsync(service_name)
+        self = ApiAsync(service_name, redis_url)
         await self.get_schema()
         return self
 
-    def __init__(self, service_name: str):
+    def __init__(self, service_name: str, redis_url: str):
         """ Низя. Создание объекта через create_api_async """
+        self.redis_url = redis_url
+        self.redis = None
+        self.redis: Redis
         self.service_name = service_name
         self.schema = None
 
@@ -126,10 +132,7 @@ class ApiAsync(object):
             str, list: Айдишники сообщений (или сообщения, в зависимости от params)
         """
         if not use_open_connection or self.connection.is_closed:
-            await self.make_connection(method['config']['username'],
-                                       method['config']['password'],
-                                       method['config']['address'],
-                                       method['config']['port'])
+            await self.make_connection(method)
 
         exchange = await self.channel.declare_exchange(name=method['config']['exchange'])
         queue = await self.channel.declare_queue(name=method['config']['quenue'])
@@ -146,19 +149,19 @@ class ApiAsync(object):
             return param['id']
 
         if isinstance(params, dict):
-            return await asyncio.gather(send_message(params))
+            result = await asyncio.gather(send_message(params))
+            return result[0]
         elif isinstance(params, list):
             return await asyncio.gather(*[send_message(param) for param in params])
 
         if close_connection:
             await self.close_connection()
 
-    async def make_connection(self, login, password, address, port=5672, vhost=''):
+    async def make_connection(self, method):
         """ Создаем подключение и открываем канал """
-        port = '' if port is None else port
-        vhost = '' if vhost is None else vhost
+
         conn = await aio_pika.connect_robust(
-            f"amqp://{login}:{password}@{address}:{port}/{vhost}",
+            self.amqp_url_from_method(method),
             loop=asyncio.get_event_loop()
         )
         ch = await conn.channel()
@@ -167,3 +170,28 @@ class ApiAsync(object):
     async def close_connection(self):
         await self.channel.close()
         await self.channel.close()
+
+    def redis_connection(self, redis_url: str):
+        self.redis = aioredis.from_url(redis_url)
+
+    async def read_redis(self, uuid_correlation) -> dict:
+        """ Читаем из редиса пока результат равен null"""
+        self.redis: Redis
+        if self.redis is None:
+            self.redis_connection(self.redis_url)
+
+        res = await self.redis.get(uuid_correlation)
+        while res is None:
+            res = await self.redis.get(uuid_correlation)
+
+        return json.loads(res)
+
+    @staticmethod
+    def amqp_url_from_method(method: dict):
+        login = method['config']['username']
+        password = method['config']['password']
+        address = method['config']['address']
+        port = 5672 if method['config']['port'] == '' else method['config']['port']
+        vhost = method['config']['virtualhost']
+        amqp = f'amqp://{login}:{password}@{address}:{port}/{vhost}'
+        return amqp
