@@ -19,6 +19,7 @@ class ApiAsync(object):
 
     @classmethod
     async def create_api_async(cls, service_name):
+        """ Создание экземпляра класса """
         self = ApiAsync(service_name)
         await self.get_schema()
         return self
@@ -59,63 +60,74 @@ class ApiAsync(object):
         """
 
         async def make_single_request(param):
-            config = method['Config']
-            url = f"http://{config['address']}:{config['port']}{config['connstring']}"
-            if config['auth']:
-                auth = aiohttp.BasicAuth(config['username'],
-                                         config['password'])
-            else:
-                auth = None
-            # TODO: создавать сессию единожды!
             if config['type'] == 'POST':
-                async with aiohttp.ClientSession(auth=auth) as session:
-                    async with session.post(url, data=param) as resp:
-                        return await resp.text()
+                async with session.post(url, data=param) as resp:
+                    return await resp.text()
             elif config['type'] == 'GET':
-                async with aiohttp.ClientSession(auth=auth) as session:
-                    async with session.get(url, params=param) as resp:
-                        return await resp.text()
+                async with session.get(url, params=param) as resp:
+                    return await resp.text()
 
-        if isinstance(params, dict):
-            return await make_single_request(params)
-        if isinstance(params, list):
-            response = list()
-            for param in params:
-                response.append(await make_single_request(param))
-            return response
+        config = method['Config']
+        url = f"http://{config['address']}:{config['port']}{config['connstring']}{method['MethodName']}"
+        if config['auth']:
+            auth = aiohttp.BasicAuth(config['username'],
+                                     config['password'])
+        else:
+            auth = None
+        async with aiohttp.ClientSession(auth=auth) as session:
+            if isinstance(params, dict):
+                return await make_single_request(params)
+            if isinstance(params, list):
+                response = list()
+                for param in params:
+                    response.append(await make_single_request(param))
+                return response
 
-        raise ValueError
+        raise RuntimeError
 
-    async def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> None:
-        await self.make_connection(method['config']['username'],
-                                   method['config']['password'],
-                                   method['config']['address'],
-                                   method['config']['port'])
-        # exchange = await self.channel.declare_exchange(method['config']['AMQPexchange'])
+    async def make_request_api_amqp(self,
+                                    method, params: Union[List[dict], dict],
+                                    close_connection: bool = True,
+                                    use_open_connection: bool = False):
+        if not use_open_connection or self.connection.is_closed:
+            await self.make_connection(method['config']['username'],
+                                       method['config']['password'],
+                                       method['config']['address'],
+                                       method['config']['port'])
+
         exchange = await self.channel.declare_exchange(name=method['config']['exchange'])
         queue = await self.channel.declare_queue(name=method['config']['quenue'])
+        # Биндим очередь
         await queue.bind(exchange)
 
         async def send_message(param):
-            print('start send message ' + str(datetime.datetime.now()))
             param['id'] = str(uuid.uuid4())
             param['service_callback'] = self.service_name
             param['method'] = method['MethodName']
             json_param = json.dumps(param).encode()
             await exchange.publish(aio_pika.Message(body=json_param),
                                    routing_key=method['config']['quenue'])
-            print('end message sending ' + str(datetime.datetime.now()))
+            return param['id']
 
         if isinstance(params, dict):
-            await asyncio.gather(send_message(params))
+            return await asyncio.gather(send_message(params))
         elif isinstance(params, list):
-            await asyncio.gather(*[send_message(param) for param in params])
+            return await asyncio.gather(*[send_message(param) for param in params])
 
-    async def make_connection(self, login, password, address, port=None, vhost=None):
-        """ Создаем подключение и открываем канала """
+        if close_connection:
+            await self.close_connection()
+
+    async def make_connection(self, login, password, address, port=5672, vhost=''):
+        """ Создаем подключение и открываем канал """
+        port = '' if port is None else port
+        vhost = '' if vhost is None else vhost
         conn = await aio_pika.connect_robust(
-            f"amqp://{login}:{password}@{address}/",
+            f"amqp://{login}:{password}@{address}:{port}/{vhost}",
             loop=asyncio.get_event_loop()
         )
         ch = await conn.channel()
         self.connection, self.channel = conn, ch
+
+    async def close_connection(self):
+        await self.channel.close()
+        await self.channel.close()

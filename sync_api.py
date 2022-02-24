@@ -10,7 +10,11 @@ from requests.auth import HTTPBasicAuth
 from custom_exceptions import (MethodNotFound,
                                ServiceNotFound,
                                ServiceMethodNotAllowed,
-                               RequireParamNotSet)
+                               RequireParamNotSet, ParamNotFound)
+
+
+class NotFoundParams(Exception):
+    pass
 
 
 class ApiSync:
@@ -80,6 +84,7 @@ class ApiSync:
         """
 
         def check_param(param: dict):
+
             for method_param, requirements in method_params['Params'].items():
                 value_type, size, is_req = requirements
                 if method_param not in param and is_req:
@@ -99,7 +104,10 @@ class ApiSync:
                     pass
                 elif value_type == 'json':
                     json.loads(value)
-
+                elif value_type == 'bin':
+                    pass
+            if len(param) != method_params['Params']:
+                raise ParamNotFound
         if isinstance(params, dict):
             params = [params]
 
@@ -111,9 +119,9 @@ class ApiSync:
     @staticmethod
     def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
         r"""
-            Запрос на определенный метод сервиса
-            :arg method Метод отправки
-            :arg params Параметры, может быть набором параметров
+            Запрос на определенный метод сервиса.
+            :arg method Метод отправки.
+            :arg params Параметры, может быть набором параметров.
         """
 
         def make_single_request(param):
@@ -140,8 +148,11 @@ class ApiSync:
 
         raise ValueError
 
-    def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> bool:
-
+    def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> Union[str, List[str]]:
+        r"""
+            Отправка через кролика.
+            Возвращает id сообщения или массив id сообщений
+        """
         credentials = pika.PlainCredentials(method['config']['username'],
                                             method['config']['password'])
         connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -155,8 +166,8 @@ class ApiSync:
         # !!! нужно биндить очередь к обменнику
         channel.queue_bind(method['config']['quenue'], method['config']['exchange'])
 
-        def send_message(_param):
-            _param['id'] = str(uuid.uuid4())
+        def send_message(_param, correlation_id):
+            _param['id'] = str(correlation_id)
             _param['service_callback'] = self.service_name
             _param['method'] = method['MethodName']
             channel.basic_publish(exchange=method['config']['exchange'],
@@ -164,14 +175,18 @@ class ApiSync:
                                   body=bytes(json.dumps(params), 'utf-8'))
 
         if isinstance(params, dict):
-            send_message(params)
+            id = str(uuid.uuid4())
+            send_message(params, id)
+            return id
         elif isinstance(params, list):
+            ids = []
             for param in params:
-                send_message(param)
+                id = str(uuid.uuid4())
+                send_message(param, str(uuid.uuid4()))
+                ids.append(id)
+            return ids
         channel.close()
         connection.close()
-
-        return True
 
     @staticmethod
     def find_method(method_name, service_schema):
