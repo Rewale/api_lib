@@ -1,29 +1,30 @@
 from async_api import ApiAsync
 from sync_api import ApiSync
 import custom_exceptions
+from utils.utils import check_method_available, find_method
 
 api_client = ApiSync('GPSPROGR')
 
 
 def test_allowed_method():
-    method = api_client.find_method('getApiStruct', api_client.schema['API'])
-    assert api_client.check_method_available(method, api_client.schema['API'], api_client.service_name)
+    method = find_method('getApiStruct', api_client.schema['API'])
+    assert check_method_available(method, api_client.schema['API'], api_client.service_name)
 
 
 def test_allowed_method_no_arrays():
-    method = api_client.find_method('newuser', api_client.schema['GPSPROGR'])
-    assert api_client.check_method_available(method, api_client.schema['GPSPROGR'], api_client.service_name)
+    method = find_method('newuser', api_client.schema['GPSPROGR'])
+    assert check_method_available(method, api_client.schema['GPSPROGR'], api_client.service_name)
 
 
 def test_allowed_method_in_array():
-    method = api_client.find_method('method1', api_client.schema['FILESPROGR'])
-    assert api_client.check_method_available(method, api_client.schema['GPSPROGR'], 'FILESPROGR')
+    method = find_method('method1', api_client.schema['FILESPROGR'])
+    assert check_method_available(method, api_client.schema['GPSPROGR'], 'FILESPROGR')
 
 
 def test_disallowed_method_in_array():
-    method = api_client.find_method('method1', api_client.schema['FILESPROGR'])
+    method = find_method('method1', api_client.schema['FILESPROGR'])
     try:
-        api_client.check_method_available(method, api_client.schema['GPSPROGR'], 'FILESPROGR')
+        check_method_available(method, api_client.schema['GPSPROGR'], 'FILESPROGR')
     except custom_exceptions.ServiceMethodNotAllowed:
         assert True
 

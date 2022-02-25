@@ -25,13 +25,13 @@ async def listen_rabbit_write_redis(queue_name):
     async with queue.iterator() as queue_iter:
         async for message in queue_iter:
             message: aio_pika.IncomingMessage
-            async with message.process():
+            with message.process():
                 decoded = message.body.decode()
                 json_dict = json.loads(decoded)
                 corr_id = json_dict['id']
                 del json_dict['id']
                 value = json.dumps(json_dict)
-                asyncio.create_task(redis.set(corr_id, value))
+                await redis.set(corr_id, value)
 
 
 async def start_listening(queue_name: str, connection_amqp: str, connection_redis: str = "redis://localhost"):

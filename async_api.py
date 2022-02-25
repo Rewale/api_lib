@@ -11,6 +11,7 @@ from aioredis import Redis
 
 from custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
+from utils.utils import check_method_available, check_params, find_method
 
 
 class ApiAsync(object):
@@ -58,9 +59,9 @@ class ApiAsync(object):
         """
         if requested_service not in self.schema:
             raise ServiceNotFound
-        method = ApiSync.find_method(method_name, self.schema[requested_service])
-        ApiSync.check_params(method, params)
-        ApiSync.check_method_available(method, self.schema[requested_service], self.service_name)
+        method = find_method(method_name, self.schema[requested_service])
+        check_params(method, params)
+        check_method_available(method, self.schema[requested_service], self.service_name)
 
         if method['TypeConnection'] == 'HTTP':
             return self.make_request_api_http(method, params)
