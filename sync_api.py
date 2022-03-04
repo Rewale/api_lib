@@ -19,6 +19,7 @@ class NotFoundParams(Exception):
 
 
 class ApiSync:
+    """ Синхронный класс для работы с апи и другими сервисами """
     url = 'http://192.168.0.42/getApiStruct'
 
     def __init__(self, service_name: str):
@@ -79,7 +80,7 @@ class ApiSync:
 
         def make_single_request(param):
             config = method['Config']
-            url = f"http://{config['address']}:{config['port']}{config['connstring']}{method['MethodName']}"
+            url = f"http://{config['address']}:{config['port']}{config['endpoint']}{method['MethodName']}"
             if config['auth']:
                 auth = HTTPBasicAuth(config['username'],
                                      config['password'])

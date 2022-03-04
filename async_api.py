@@ -178,6 +178,7 @@ class ApiAsync(object):
 
     async def read_redis(self, uuid_correlation, timeout=3) -> dict:
         """ Читаем из редиса пока результат равен null"""
+        # TODO: разобраться почему не работает waif_for
         start_time = time.monotonic()
         if self.redis is None:
             self.redis_connection(self.redis_url)
