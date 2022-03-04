@@ -1,3 +1,4 @@
+import datetime
 import json
 from typing import Union
 
@@ -79,7 +80,13 @@ def check_params(method_params: dict, params: Union[dict, list]):
             elif value_type == 'json':
                 json.loads(value)
             elif value_type == 'bin':
+                # TODO проверка на бинарный тип!
                 pass
+            elif value_type == 'base64':
+                assert isinstance(value, str)
+            elif value_type == 'date':
+                datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+
         if len(param) != method_params['Params']:
             raise ParamNotFound
 

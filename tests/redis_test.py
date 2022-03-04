@@ -29,6 +29,25 @@ def test_read_redis():
                                                                        'date': date}
 
 
+def test_read_redis_hard():
+    # Проверка на "неблокируемость"
+    loop.create_task(foo())
+    message_with_date = test_messages[0]
+    for _ in range(0, 100):
+        date = str(datetime.datetime.now())
+        message_with_date['date'] = date
+        # Отправляем в эту же очередь сообщение
+        id = loop.run_until_complete(api.make_request_api_amqp(test_method,
+                                                               message_with_date))
+        # Читаем из редис наличие сообщения
+        callback_message = loop.run_until_complete(api.read_redis(id))
+
+        assert isinstance(callback_message, dict) and callback_message == {'test': 1232, 'test2': 'ffdsf',
+                                                                           'service_callback': 'RECOGNIZE',
+                                                                           'method': 'test',
+                                                                           'date': date}
+
+
 def test_read_redis_timeout():
     async def main():
         # Проверка на "неблокируемость"

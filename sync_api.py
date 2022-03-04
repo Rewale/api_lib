@@ -1,16 +1,12 @@
 import json
 import uuid
+from typing import Union, List
 
 import pika
-from typing import Union, List
-import aiohttp
 import requests
 from requests.auth import HTTPBasicAuth
 
-from custom_exceptions import (MethodNotFound,
-                               ServiceNotFound,
-                               ServiceMethodNotAllowed,
-                               RequireParamNotSet, ParamNotFound)
+from custom_exceptions import (ServiceNotFound)
 from utils.utils import find_method, check_params, check_method_available
 
 

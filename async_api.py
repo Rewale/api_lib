@@ -41,21 +41,25 @@ class ApiAsync(object):
         self.schema = None
 
     def send_request_api(self, method_name: str,
-                         params: Union[dict, List[dict]], requested_service: str):
+                         params: Union[dict, List[dict]], requested_service: str, is_rpc=False, timeout=3):
         r"""
-        Проверка доступности метода
+        Отправка запроса на сервис
 
         Args:
            method_name: имя метод апи.
            params: Схема апи текущего сервиса.
            requested_service: Имя сервиса - адресата.
+           is_rpc: Ожидать ответа от сервиса при запросе AMQP (Удаленный вызов процедуры).
+           timeout: Время ожидания запроса сервиса при is_rpc=True
         Raises:
            ServiceMethodNotAllowed - Метод сервиса не доступен из текущего метода.
            AssertionError - тип параметра не соответствует типу в методе.
            RequireParamNotSet - не указан обязательный параметр.
            ParamNotFound - параметр не найден
+           TimeoutError - истекло время ожидания ответа от стороннего сервиса
         Returns:
-           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или айдишники сообщений (или сообщения, в зависимости от params) - при AMQP
+           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или is_rpc=True,
+           id сообщений (или сообщения, в зависимости от params) - при AMQP,
         """
         if requested_service not in self.schema:
             raise ServiceNotFound
@@ -65,9 +69,11 @@ class ApiAsync(object):
 
         if method['TypeConnection'] == 'HTTP':
             return self.make_request_api_http(method, params)
-
         if method['TypeConnection'] == 'AMQP':
-            return self.make_request_api_amqp(method, params)
+            if not is_rpc:
+                return self.make_request_api_amqp(method, params)
+            else:
+                return self.rpc_amqp(method, params, timeout=3)
 
     async def get_schema(self) -> dict:
         """ Асинхронное получение схемы """
@@ -176,9 +182,18 @@ class ApiAsync(object):
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
 
+    async def rpc_amqp(self, method, params, timeout=3):
+        """
+        Удаленный вызов процедуры.
+        Запрос по AMQP и ожидание ответа
+        от стороннего сервиса в течении определенного количества времени
+        """
+        # TODO: старт задачи на слушанье кролика и записи в редис
+        message_uuid = await self.make_request_api_amqp(method=method, params=params)
+        await self.read_redis(message_uuid, timeout)
+
     async def read_redis(self, uuid_correlation, timeout=3) -> dict:
-        """ Читаем из редиса пока результат равен null"""
-        # TODO: разобраться почему не работает waif_for
+        """ Читаем из редиса пока результат равен null с определенным таймаутом """
         start_time = time.monotonic()
         if self.redis is None:
             self.redis_connection(self.redis_url)
