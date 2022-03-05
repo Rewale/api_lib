@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import time
 import uuid
@@ -9,6 +10,7 @@ import aiohttp
 import aioredis
 from aioredis import Redis
 
+import redis_read_worker
 from custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
 from utils.utils import check_method_available, check_params, find_method
@@ -137,7 +139,7 @@ class ApiAsync(object):
 
 
         Returns:
-            str, list: Айдишники сообщений (или сообщения, в зависимости от params)
+            str, list: id сообщений (или сообщения, в зависимости от params)
         """
         if not use_open_connection or self.connection.is_closed:
             await self.make_connection(method)
@@ -182,15 +184,25 @@ class ApiAsync(object):
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
 
-    async def rpc_amqp(self, method, params, timeout=3):
+    async def rpc_amqp(self, method, params, callback_queue, timeout=3):
         """
         Удаленный вызов процедуры.
         Запрос по AMQP и ожидание ответа
         от стороннего сервиса в течении определенного количества времени
         """
-        # TODO: старт задачи на слушанье кролика и записи в редис
+        date = str(datetime.datetime.now())
+        params['date'] = date
+        task_read_rabbit = asyncio.create_task(
+            redis_read_worker.start_listening(callback_queue,
+                                              ApiAsync.amqp_url_from_method(method)))
+        # Запрос на сервис
         message_uuid = await self.make_request_api_amqp(method=method, params=params)
-        await self.read_redis(message_uuid, timeout)
+        try:
+            return await self.read_redis(message_uuid, timeout)
+        except Exception as e:
+            raise e
+        finally:
+            task_read_rabbit.cancel()
 
     async def read_redis(self, uuid_correlation, timeout=3) -> dict:
         """ Читаем из редиса пока результат равен null с определенным таймаутом """
