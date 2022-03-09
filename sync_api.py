@@ -36,13 +36,13 @@ class ApiSync:
         return self.schema
 
     def send_request_api(self, method_name: str,
-                         params: Union[dict, List[dict]], requested_service: str, wait_answer: bool):
+                         params: Union[dict, List[dict]], requested_service: str, wait_answer: bool = True):
         r"""
         Проверка доступности метода
 
         Args:
            method_name: имя метод апи.
-           params: Схема апи текущего сервиса.
+           params: Параметры.
            requested_service: Имя сервиса - адресата.
            wait_answer: дожидаться ответа[Не используется]
         Raises:
@@ -51,7 +51,7 @@ class ApiSync:
            RequireParamNotSet - не указан обязательный параметр.
            ParamNotFound - параметр не найден
         Returns:
-           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или айдишники сообщений (или сообщения, в зависимости от params) - при AMQP
+           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или id сообщений (или сообщения, в зависимости от params) - при AMQP
         """
         if requested_service not in self.schema:
             raise ServiceNotFound
@@ -111,7 +111,7 @@ class ApiSync:
             params (List[dict], dict): Параметры, может быть набором параметров.
 
         Returns:
-            str, list: Айдишники сообщений (или сообщения, в зависимости от params)
+            str, list: id сообщений (или сообщения, в зависимости от params)
         """
         credentials = pika.PlainCredentials(method['config']['username'],
                                             method['config']['password'])
