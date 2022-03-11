@@ -114,7 +114,7 @@ def find_method(method_name, service_schema):
     raise MethodNotFound
 
 
-def json_to_response(json_response: str, response_id: int, result: bool, method: str = None,
+def json_to_response(json_response: dict, response_id: int, result: bool, method: str = None,
                      service_callback: str = None):
     """ Оборачивает строку json в корректный для сервиса вид """
     correct_json = {
@@ -126,12 +126,12 @@ def json_to_response(json_response: str, response_id: int, result: bool, method:
             'response': json_response
         }
     }
-    response_without_id = json.dumps(correct_json)
+    response_without_id = json.dumps(correct_json, default=str, ensure_ascii=False)
     correct_json['id'] = hashlib \
         .md5(response_without_id.encode('utf-8')).digest() \
         .hex(' ', 1).upper()
 
-    return json.dumps(correct_json)
+    return json.dumps(correct_json, ensure_ascii=False, default=str)
 
 
 def get_queue_service(service_name: str, schema: dict):
