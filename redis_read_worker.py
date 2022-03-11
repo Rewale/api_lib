@@ -28,8 +28,12 @@ async def listen_rabbit_write_redis(queue_name):
             with message.process():
                 decoded = message.body.decode()
                 json_dict = json.loads(decoded)
-                corr_id = json_dict['id']
-                del json_dict['id']
+                try:
+                    corr_id = json_dict['response_id']
+                except:
+                    await message.reject()
+                    continue
+                del json_dict['response_id']
                 value = json.dumps(json_dict)
                 await redis.set(corr_id, value)
 

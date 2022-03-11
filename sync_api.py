@@ -7,11 +7,12 @@ import aiohttp
 import requests
 from requests.auth import HTTPBasicAuth
 
-from custom_exceptions import (MethodNotFound,
-                               ServiceNotFound,
-                               ServiceMethodNotAllowed,
-                               RequireParamNotSet, ParamNotFound)
-from utils.utils import find_method, check_params, check_method_available
+from .custom_exceptions import (MethodNotFound,
+                                ServiceNotFound,
+                                ServiceMethodNotAllowed,
+                                RequireParamNotSet, ParamNotFound)
+# from .utils import find_method, check_params, check_method_available
+from .utils.utils import find_method, check_params, check_method_available
 
 
 class NotFoundParams(Exception):
@@ -20,7 +21,7 @@ class NotFoundParams(Exception):
 
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
-    url = 'http://192.168.0.42/getApiStruct'
+    url = 'http://apidev.mezex.lan/getApiStructProgr'
 
     def __init__(self, service_name: str):
         r"""
@@ -32,7 +33,9 @@ class ApiSync:
         self.get_schema_sync()
 
     def get_schema_sync(self) -> dict:
-        self.schema = json.loads(requests.post(self.url, data={'format': 'json'}).text)
+        raw_data = requests.post(self.url, data={'format': 'json'},
+                                 auth=HTTPBasicAuth('user', 'Ef-PgjJ3')).text
+        self.schema = json.loads(raw_data)
         return self.schema
 
     def send_request_api(self, method_name: str,

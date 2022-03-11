@@ -1,7 +1,10 @@
-from async_api import ApiAsync
-from sync_api import ApiSync
-import custom_exceptions
-from utils.utils import check_method_available, find_method
+import api_lib.utils.utils
+from api_lib.async_api import ApiAsync
+from api_lib.sync_api import ApiSync
+import api_lib.custom_exceptions as custom_exceptions
+
+import api_lib.utils.utils as utils
+from api_lib.utils.utils import check_method_available, find_method
 
 api_client = ApiSync('GPSPROGR')
 
@@ -72,3 +75,13 @@ def test_amqp():
     }
 
     assert ApiAsync.amqp_url_from_method(method=test_method) == 'amqp://guest:guest@192.168.0.216:5672/'
+
+
+def test_response_json():
+    # TODO: написать нормальный тест совпадения хеша 1с
+    response = utils.json_to_response('{"data":"ok"}', 111, True)
+    assert response
+
+
+def test_queue_name():
+    assert api_lib.utils.utils.get_queue_service("BDVPROGR", api_client.schema) == 'bdvprogr'

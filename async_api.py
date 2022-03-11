@@ -9,9 +9,9 @@ import aiohttp
 import aioredis
 from aioredis import Redis
 
-from custom_exceptions import (ServiceNotFound)
-from sync_api import ApiSync
-from utils.utils import check_method_available, check_params, find_method
+from api_lib.custom_exceptions import (ServiceNotFound)
+from api_lib.sync_api import ApiSync
+from api_lib.utils.utils import check_method_available, check_params, find_method
 
 
 class ApiAsync(object):
@@ -71,7 +71,9 @@ class ApiAsync(object):
 
     async def get_schema(self) -> dict:
         """ Асинхронное получение схемы """
-        async with aiohttp.ClientSession() as session:
+        auth = aiohttp.BasicAuth('user',
+                                 'Ef-PgjJ3')
+        async with aiohttp.ClientSession(auth=auth) as session:
             async with session.post(self.url, data={'format': 'json'}) as response:
                 text_json = await response.text()
         content_json = json.loads(text_json)
@@ -178,7 +180,6 @@ class ApiAsync(object):
 
     async def read_redis(self, uuid_correlation, timeout=3) -> dict:
         """ Читаем из редиса пока результат равен null"""
-        # TODO: разобраться почему не работает waif_for
         start_time = time.monotonic()
         if self.redis is None:
             self.redis_connection(self.redis_url)

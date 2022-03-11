@@ -1,7 +1,8 @@
+import hashlib
 import json
 from typing import Union
 
-from custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
+from ..custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
 
 
 def check_method_available(method, curr_service_schema, requested_service):
@@ -111,3 +112,56 @@ def find_method(method_name, service_schema):
                     return method
 
     raise MethodNotFound
+
+
+def json_to_response(json_response: str, response_id: int, result: bool, method: str = None,
+                     service_callback: str = None):
+    """ Оборачивает строку json в корректный для сервиса вид """
+    correct_json = {
+        'response_id': response_id,
+        'method': method,
+        'service_callback': service_callback,
+        'message': {
+            'result': result,
+            'response': json_response
+        }
+    }
+    response_without_id = json.dumps(correct_json)
+    correct_json['id'] = hashlib \
+        .md5(response_without_id.encode('utf-8')).digest() \
+        .hex(' ', 1).upper()
+
+    return json.dumps(correct_json)
+
+
+def get_queue_service(service_name: str, schema: dict):
+    """ Очередь сервиса """
+    return schema[service_name]['AMQP']['config']['quenue']
+
+
+def get_amqp_address_service(service_name: str, schema: dict):
+    """ Очередь сервиса """
+    return schema[service_name]['AMQP']['config']['address']
+
+
+def get_virtualhost_service(service_name: str, schema: dict):
+    """ Очередь сервиса """
+    return schema[service_name]['AMQP']['config']['virtualhost']
+
+
+def get_exchange_service(service_name: str, schema: dict):
+    """ Очередь сервиса """
+    return schema[service_name]['AMQP']['config']['exchange']
+
+
+def get_amqp_username_service(service_name: str, schema: dict):
+    """ Очередь сервиса """
+    return schema[service_name]['AMQP']['config']['username']
+
+
+def get_amqp_password_service(service_name: str, schema: dict):
+    return schema[service_name]['AMQP']['config']['password']
+
+
+def get_port_amqp_service(service_name: str, schema: dict):
+    return schema[service_name]['AMQP']['config']['port']
