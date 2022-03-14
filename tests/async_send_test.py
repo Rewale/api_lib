@@ -3,8 +3,8 @@ import datetime
 import json
 import uuid
 
-import redis_read_worker
-from async_api import ApiAsync
+from api_lib import redis_read_worker
+from api_lib.async_api import ApiAsync
 
 loop = asyncio.get_event_loop()
 api: ApiAsync = loop.run_until_complete(ApiAsync.create_api_async('RECOGNIZE'))

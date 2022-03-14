@@ -1,7 +1,7 @@
 import json
 
-from sync_api import ApiSync
-import custom_exceptions
+from api_lib.sync_api import ApiSync
+import api_lib.custom_exceptions
 
 api_client = ApiSync('GPSPROGR')
 

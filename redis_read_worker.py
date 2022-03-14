@@ -15,7 +15,7 @@ async def make_connection_amqp(address):
     return conn, ch
 
 
-async def listen_rabbit_write_redis(queue_name):
+async def listen_rabbit_write_redis(queue_name, channel, redis):
     # Declaring queue
     try:
         queue = await channel.declare_queue(name=queue_name)
@@ -39,9 +39,6 @@ async def listen_rabbit_write_redis(queue_name):
 
 
 async def start_listening(queue_name: str, connection_amqp: str, connection_redis: str = "redis://localhost"):
-    global redis
-    global connection
-    global channel
     redis = aioredis.from_url(connection_redis)
     connection, channel = await make_connection_amqp(connection_amqp)
-    await listen_rabbit_write_redis(queue_name)
+    await listen_rabbit_write_redis(queue_name, channel, redis)

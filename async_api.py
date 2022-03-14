@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 import uuid
+from datetime import datetime
 from typing import Union, List
 
 import aio_pika
@@ -9,6 +10,7 @@ import aiohttp
 import aioredis
 from aioredis import Redis
 
+from api_lib import redis_read_worker
 from api_lib.custom_exceptions import (ServiceNotFound)
 from api_lib.sync_api import ApiSync
 from api_lib.utils.utils import check_method_available, check_params, find_method
@@ -178,8 +180,28 @@ class ApiAsync(object):
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
 
+    async def rpc_amqp(self, method, params, callback_queue, timeout=3):
+        """
+        Удаленный вызов процедуры.
+        Запрос по AMQP и ожидание ответа
+        от стороннего сервиса в течении определенного количества времени
+        """
+        date = str(datetime.now())
+        params['date'] = date
+        task_read_rabbit = asyncio.create_task(
+            redis_read_worker.start_listening(callback_queue,
+                                              ApiAsync.amqp_url_from_method(method)))
+        # Запрос на сервис
+        message_uuid = await self.make_request_api_amqp(method=method, params=params)
+        try:
+            return await self.read_redis(message_uuid, timeout)
+        except Exception as e:
+            raise e
+        finally:
+            task_read_rabbit.cancel()
+
     async def read_redis(self, uuid_correlation, timeout=3) -> dict:
-        """ Читаем из редиса пока результат равен null"""
+        """ Читаем из редиса пока результат равен null с определенным таймаутом """
         start_time = time.monotonic()
         if self.redis is None:
             self.redis_connection(self.redis_url)

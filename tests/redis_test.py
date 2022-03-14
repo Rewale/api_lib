@@ -3,14 +3,13 @@ import json
 import multiprocessing
 from time import sleep
 
-import redis_read_worker
+from api_lib import redis_read_worker
 import datetime
-from async_api import ApiAsync
-from tests.async_send_test import foo, test_messages, test_method
+from api_lib.async_api import ApiAsync
+from api_lib.tests.async_send_test import foo, test_messages, test_method
 
 loop = asyncio.get_event_loop()
 api: ApiAsync = loop.run_until_complete(ApiAsync.create_api_async('RECOGNIZE'))
-
 
 # Создаем в фоне задачу на чтение определенной очереди и запись в редис
 # loop.create_task(redis_read_worker.start_listening('testQuenue', ApiAsync.amqp_url_from_method(test_method)))
@@ -72,13 +71,6 @@ api: ApiAsync = loop.run_until_complete(ApiAsync.create_api_async('RECOGNIZE'))
 #     loop.run_until_complete(main())
 
 
-def test_rpc_timeout():
-    try:
-        result = loop.run_until_complete(api.rpc_amqp(test_method, test_messages[0], '12312'))
-    except TimeoutError:
-        assert True
-
-
 test_method = {
     'config': {
         'username': 'guest',
@@ -93,7 +85,7 @@ test_method = {
 }
 
 
-def test_rpc():
+def test_timeout_rpc():
     def run_psevdoservice():
         """ Эмуляция сервиса """
         from datetime import datetime
@@ -116,10 +108,80 @@ def test_rpc():
 
         channel.basic_consume(on_message_callback=on_request, queue='fines_parsing')
         channel.start_consuming()
+
+    process = multiprocessing.Process(target=run_psevdoservice)
+    process.start()
+    try:
+        result = loop.run_until_complete(api.rpc_amqp(test_method, test_messages[0], 'callback_queue'))
+    except TimeoutError:
+        assert True
+        process.kill()
+        return
+    process.kill()
+    # assert result['text'] == 'test_callback_message'
+    assert False
+
+
+def test_rpc():
+    def run_psevdoservice():
+        """ Эмуляция сервиса """
+        from datetime import datetime
+        from time import sleep
+        import pika
+        connection = pika.BlockingConnection(pika.ConnectionParameters(
+            virtual_host='/',
+            host='192.168.0.216'))
+        channel = connection.channel()
+        channel.queue_declare(queue='callback_queue')
+        channel.queue_declare(queue='fines_parsing')
+
+        def on_request(ch, method, props: pika.BasicProperties, body):
+            response = {'text': "test_callback_message", 'response_id': json.loads(body)['id']}
+            response = json.dumps(response)
+            ch.basic_publish(exchange='',
+                             routing_key='callback_queue',
+                             body=response)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        channel.basic_consume(on_message_callback=on_request, queue='fines_parsing')
+        channel.start_consuming()
+
     process = multiprocessing.Process(target=run_psevdoservice)
     process.start()
     result = loop.run_until_complete(api.rpc_amqp(test_method, test_messages[0], 'callback_queue'))
-    process.terminate()
-    process.join()
+    process.kill()
     assert result['text'] == 'test_callback_message'
 
+
+def test_multiple_rpc():
+    def run_psevdoservice():
+        """ Эмуляция сервиса """
+        from datetime import datetime
+        from time import sleep
+        import pika
+        connection = pika.BlockingConnection(pika.ConnectionParameters(
+            virtual_host='/',
+            host='192.168.0.216'))
+        channel = connection.channel()
+        channel.queue_declare(queue='callback_queue')
+        channel.queue_declare(queue='fines_parsing')
+
+        def on_request(ch, method, props: pika.BasicProperties, body):
+            response = {'text': "test_callback_message", 'response_id': json.loads(body)['id']}
+            response = json.dumps(response)
+            ch.basic_publish(exchange='',
+                             routing_key='callback_queue',
+                             body=response)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        channel.basic_consume(on_message_callback=on_request, queue='fines_parsing')
+        channel.start_consuming()
+
+    process = multiprocessing.Process(target=run_psevdoservice)
+    process.start()
+    result = loop.run_until_complete(asyncio.gather(api.rpc_amqp(test_method, test_messages[0], 'callback_queue'),
+                                                    api.rpc_amqp(test_method, test_messages[0], 'callback_queue'),
+                                                    api.rpc_amqp(test_method, test_messages[0], 'callback_queue')))
+    process.kill()
+    for res in result:
+        assert res['text'] == 'test_callback_message'
