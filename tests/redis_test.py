@@ -119,7 +119,7 @@ def test_rpc():
     process = multiprocessing.Process(target=run_psevdoservice)
     process.start()
     result = loop.run_until_complete(api.rpc_amqp(test_method, test_messages[0], 'callback_queue'))
+    assert result['text'] == 'test_callback_message'
     process.terminate()
     process.join()
-    assert result['text'] == 'test_callback_message'
 

@@ -16,3 +16,7 @@ class ServiceMethodNotAllowed(Exception):
 
 class MethodNotFound(Exception):
     pass
+
+
+class ParamValidateFail(Exception):
+    pass

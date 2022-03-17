@@ -1,7 +1,7 @@
-from async_api import ApiAsync
 from sync_api import ApiSync
-import custom_exceptions
-from utils.utils import check_method_available, find_method
+from utils import custom_exceptions
+from utils.rabbit_utils import service_amqp_url
+from utils.validation_utils import check_method_available, find_method, check_date
 
 api_client = ApiSync('GPSPROGR')
 
@@ -71,4 +71,27 @@ def test_amqp():
         'MethodName': 'test'
     }
 
-    assert ApiAsync.amqp_url_from_method(method=test_method) == 'amqp://guest:guest@192.168.0.216:5672/'
+    assert service_amqp_url(service_name=test_method) == 'amqp://guest:guest@192.168.0.216:5672/'
+
+
+def test_date_check():
+    # date = '2000-02-15T15:13:00±00:00'
+    date = '2012-10-06T04:13:00+00:00'
+    check_date(date)
+
+
+def test_date_check_wrong_len():
+    date = '2000-02-15T15:13:00+00:00'
+    try:
+        check_date(date)
+    except AssertionError:
+        assert True
+
+
+def test_date_check_fail_format():
+    date = '2000-02-15T15:13:00±00:00'
+    try:
+        check_date(date)
+    except AssertionError:
+        assert True
+

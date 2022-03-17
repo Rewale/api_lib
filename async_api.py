@@ -3,7 +3,7 @@ import datetime
 import json
 import time
 import uuid
-from typing import Union, List
+from typing import Union, List, Callable
 
 import aio_pika
 import aiohttp
@@ -11,9 +11,10 @@ import aioredis
 from aioredis import Redis
 
 import redis_read_worker
-from custom_exceptions import (ServiceNotFound)
+from utils.custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
-from utils.utils import check_method_available, check_params, find_method
+from utils.rabbit_utils import get_route_key, service_amqp_url
+from utils.validation_utils import check_method_available, check_params, find_method
 
 
 class ApiAsync(object):
@@ -42,8 +43,8 @@ class ApiAsync(object):
         self.service_name = service_name
         self.schema = None
 
-    def send_request_api(self, method_name: str,
-                         params: Union[dict, List[dict]], requested_service: str, is_rpc=False, timeout=3):
+    async def send_request_api(self, method_name: str,
+                               params: Union[dict, List[dict]], requested_service: str, is_rpc=False, timeout=3):
         r"""
         Отправка запроса на сервис
 
@@ -65,17 +66,27 @@ class ApiAsync(object):
         """
         if requested_service not in self.schema:
             raise ServiceNotFound
+        # TODO: перенести проверки в методы вызовов
         method = find_method(method_name, self.schema[requested_service])
+        if method['TypeConnection'] != 'AMQP' and is_rpc:
+            raise Exception('Только AMQP может иметь параметры is_callback и rpc')
         check_params(method, params)
         check_method_available(method, self.schema[requested_service], self.service_name)
-
         if method['TypeConnection'] == 'HTTP':
-            return self.make_request_api_http(method, params)
+            return await self.make_request_api_http(method, params)
         if method['TypeConnection'] == 'AMQP':
-            if not is_rpc:
-                return self.make_request_api_amqp(method, params)
+            if is_rpc:
+                return await self.rpc_amqp(method, params, timeout=3)
             else:
-                return self.rpc_amqp(method, params, timeout=3)
+                return await self.make_request_api_amqp(method, params)
+
+    def send_callback(self, current_service_method, ):
+        # TODO: коллбек на сервис, проверка метода ТЕКУЩЕГО СЕРВИСА
+        pass
+
+    async def listen_queue(self, on_request: Callable):
+        """ Начало опроса очереди текущего сервиса """
+        pass
 
     async def get_schema(self) -> dict:
         """ Асинхронное получение схемы """
@@ -99,11 +110,12 @@ class ApiAsync(object):
         """
 
         async def make_single_request(param):
+            # TODO: Подготовка binary в base64, отправка параметров(проверить на пхп скрипте), заголовки
             if config['type'] == 'POST':
                 async with session.post(url, data=param) as resp:
                     return await resp.text()
             elif config['type'] == 'GET':
-                async with session.get(url, params=param) as resp:
+                async with session.get(url, data=param) as resp:
                     return await resp.text()
 
         config = method['Config']
@@ -145,9 +157,6 @@ class ApiAsync(object):
             await self.make_connection(method)
 
         exchange = await self.channel.declare_exchange(name=method['config']['exchange'])
-        queue = await self.channel.declare_queue(name=method['config']['quenue'])
-        # Биндим очередь
-        await queue.bind(exchange)
 
         async def send_message(param):
             param['id'] = str(uuid.uuid4())
@@ -155,7 +164,7 @@ class ApiAsync(object):
             param['method'] = method['MethodName']
             json_param = json.dumps(param).encode()
             await exchange.publish(aio_pika.Message(body=json_param),
-                                   routing_key=method['config']['quenue'])
+                                   routing_key=get_route_key(method['config']['quenue']))
             return param['id']
 
         if isinstance(params, dict):
@@ -171,7 +180,7 @@ class ApiAsync(object):
         """ Создаем подключение и открываем канал """
 
         conn = await aio_pika.connect_robust(
-            self.amqp_url_from_method(method),
+            service_amqp_url(self.schema[self.service_name]),
             loop=asyncio.get_event_loop()
         )
         ch = await conn.channel()
@@ -184,17 +193,19 @@ class ApiAsync(object):
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
 
-    async def rpc_amqp(self, method, params, callback_queue, timeout=3):
+    async def rpc_amqp(self, method, params, callback_queue=None, timeout=3):
         """
         Удаленный вызов процедуры.
         Запрос по AMQP и ожидание ответа
         от стороннего сервиса в течении определенного количества времени
         """
+        if callback_queue is None:
+            callback_queue = self.schema[self.service_name]['AMQP']['config']['quenue']
         date = str(datetime.datetime.now())
         params['date'] = date
         task_read_rabbit = asyncio.create_task(
             redis_read_worker.start_listening(callback_queue,
-                                              ApiAsync.amqp_url_from_method(method)))
+                                              service_amqp_url(method)))
         # Запрос на сервис
         message_uuid = await self.make_request_api_amqp(method=method, params=params)
         try:
@@ -216,13 +227,3 @@ class ApiAsync(object):
             if (time.monotonic() - start_time) >= timeout:
                 raise TimeoutError
         return json.loads(res)
-
-    @staticmethod
-    def amqp_url_from_method(method: dict):
-        login = method['config']['username']
-        password = method['config']['password']
-        address = method['config']['address']
-        port = 5672 if method['config']['port'] == '' else method['config']['port']
-        vhost = method['config']['virtualhost']
-        amqp = f'amqp://{login}:{password}@{address}:{port}/{vhost}'
-        return amqp

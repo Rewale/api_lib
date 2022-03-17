@@ -1,8 +1,11 @@
+""" Проверки """
+import re
 import datetime
 import json
 from typing import Union
+from .rabbit_utils import *
 
-from custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
+from utils.custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
 
 
 def check_method_available(method, curr_service_schema, requested_service):
@@ -43,6 +46,17 @@ def check_method_available(method, curr_service_schema, requested_service):
     return True
 
 
+def check_date(value_date: str):
+    """ Проверка даты на соответствие ISO формату YYYY-MM-DDThh:mm:ss±hh:mm """
+    pattern = r'^([\+-]?\d{4}(?!\d{2}\b))((-?)((0[1-9]|1[0-2])(\3([12]\d|0[1-9]|3[01]))?|W([0-4]\d|5[0-2])(-?[' \
+              r'1-7])?|(00[1-9]|0[1-9]\d|[12]\d{2}|3([0-5]\d|6[1-6])))([T\s]((([01]\d|2[0-3])((:?)[0-5]\d)?|24\:?00)(' \
+              r'[\.,]\d+(?!:))?)?(\17[0-5]\d([\.,]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)?$'
+    result = re.fullmatch(pattern, value_date)
+
+    assert len(value_date) == 25
+    assert result is not None
+
+
 def check_params(method_params: dict, params: Union[dict, list]):
     r"""
     Валидация параметров
@@ -59,6 +73,7 @@ def check_params(method_params: dict, params: Union[dict, list]):
     """
 
     def check_param(param: dict):
+        # TODO проверка на бинарный тип, md5, guid
 
         for method_param, requirements in method_params['Params'].items():
             value_type, size, is_req = requirements
@@ -74,18 +89,19 @@ def check_params(method_params: dict, params: Union[dict, list]):
                 if size is not None:
                     assert value <= 10 ** size
             elif value_type == 'guid':
-                pass
+                assert isinstance(value, str) and len(value) == 36
             elif value_type == 'md5':
                 pass
             elif value_type == 'json':
                 json.loads(value)
             elif value_type == 'bin':
-                # TODO проверка на бинарный тип!
                 pass
             elif value_type == 'base64':
                 assert isinstance(value, str)
             elif value_type == 'date':
                 datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+            elif value_type == 'bool':
+                assert isinstance(value, bool)
 
         if len(param) != method_params['Params']:
             raise ParamNotFound
@@ -97,6 +113,16 @@ def check_params(method_params: dict, params: Union[dict, list]):
         check_param(param)
 
     return True
+
+
+def check_hash():
+    pass
+
+
+
+
+
+
 
 
 def find_method(method_name, service_schema):
@@ -118,3 +144,8 @@ def find_method(method_name, service_schema):
                     return method
 
     raise MethodNotFound
+
+
+def check_hash_sum(message):
+    """ Проверка хеш суммы сообщения при получении """
+    pass
