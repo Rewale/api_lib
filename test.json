@@ -1,0 +1,7 @@
+{
+  "id": "test",
+  "service_callback": "SendService",
+  "method": "test_method",
+  "method_callback": "test",
+  "test_str": "test_message"
+}

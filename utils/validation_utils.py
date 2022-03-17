@@ -2,7 +2,7 @@
 import re
 import datetime
 import json
-from typing import Union
+from typing import Union, List
 from .rabbit_utils import *
 
 from utils.custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
@@ -57,7 +57,7 @@ def check_date(value_date: str):
     assert result is not None
 
 
-def check_params(method_params: dict, params: Union[dict, list]):
+def check_params(method_params: List[dict], params: Union[dict, list]):
     r"""
     Валидация параметров
 
@@ -103,9 +103,6 @@ def check_params(method_params: dict, params: Union[dict, list]):
             elif value_type == 'bool':
                 assert isinstance(value, bool)
 
-        if len(param) != method_params['Params']:
-            raise ParamNotFound
-
     if isinstance(params, dict):
         params = [params]
 
@@ -117,12 +114,6 @@ def check_params(method_params: dict, params: Union[dict, list]):
 
 def check_hash():
     pass
-
-
-
-
-
-
 
 
 def find_method(method_name, service_schema):

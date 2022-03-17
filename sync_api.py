@@ -18,7 +18,7 @@ class NotFoundParams(Exception):
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
 
-    def __init__(self, service_name: str, url='http://apidev.mezex.lan/getApiStructProgr'):
+    def __init__(self, service_name: str, url='http://apidev.mezex.lan/getApiStructProgr', schema: dict = None):
         r"""
         Args:
             service_name: Название текущего сервиса
@@ -34,10 +34,12 @@ class ApiSync:
         self.url = url
         self.schema = None
         self.service_name = service_name
+        if schema is not None:
+            self.schema = schema
         self.get_schema_sync()
 
     def get_schema_sync(self) -> dict:
-        self.schema = json.loads(requests.post(self.url, data={'format': 'json'}).text)
+        # self.schema = json.loads(requests.post(self.url, data={'format': 'json'}).text)
 
         self.queue = get_queue_service(self.service_name, self.schema)
         self.exchange = get_exchange_service(self.service_name, self.schema)
@@ -65,7 +67,10 @@ class ApiSync:
             except Exception as e:
                 return
 
-            params_method = self.check_input_params_amqp(data)
+            try:
+                params_method = self.check_input_params_amqp(data)
+            except AssertionError:
+                return
 
             service_callback = data['service_callback']
             config_service = self.schema[service_callback]['AMQP']['config']
@@ -90,9 +95,12 @@ class ApiSync:
                and 'method' in params.keys() \
                and 'method_callback'
 
-        method = get_method_service(self.service_name,
-                                    params['method'],
-                                    self.schema)
+        try:
+            schema_service = self.schema[params['service_callback']]
+        except KeyError:
+            raise ServiceNotFound
+
+        method = find_method(params['method'], schema_service)
         params_method = copy.copy(params)
         del params_method['id']
         del params_method['service_callback']

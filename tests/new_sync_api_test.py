@@ -54,17 +54,15 @@ class TestSyncApi(unittest.TestCase):
         }
 
     }
-
-    def test_open_connection(self):
-        """ Открытие соединение """
-        self.api = ApiSync('CallbackService')
-        self.api.schema = self.test_schema
+    api_callback = ApiSync('CallbackService', schema=test_schema)
+    api_sending = ApiSync('SendService', schema=test_schema)
 
     def test_start_reading(self):
         """ Начать слушать очередь """
         def method(params):
+            assert True
             return str(datetime.datetime.now()) + params['test_str']
-        self.api.listen_queue(test_method=method)
+        self.api_callback.listen_queue(test_method=method)
 
     # def test_send_callback(self):
     #     """ Отправить на сервис запрос, получить корректный ответ"""
