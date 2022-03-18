@@ -1,4 +1,5 @@
 """ Проверки """
+import abc
 import re
 import datetime
 import json
@@ -49,7 +50,8 @@ def check_method_available(method, curr_service_schema, requested_service):
 def check_date(value_date: str):
     """ Проверка даты на соответствие ISO формату YYYY-MM-DDThh:mm:ss±hh:mm """
     pattern = r'^([\+-]?\d{4}(?!\d{2}\b))((-?)((0[1-9]|1[0-2])(\3([12]\d|0[1-9]|3[01]))?|W([0-4]\d|5[0-2])(-?[' \
-              r'1-7])?|(00[1-9]|0[1-9]\d|[12]\d{2}|3([0-5]\d|6[1-6])))([T\s]((([01]\d|2[0-3])((:?)[0-5]\d)?|24\:?00)(' \
+              r'1-7])?|(00[1-9]|0[1-9]\d|[12]\d{2}|3([0-5]\d|6[1-6])))([T\s]((([01]\d|2[0-3])((:?)[0-5]\
+              d)?|24\:?00)(' \
               r'[\.,]\d+(?!:))?)?(\17[0-5]\d([\.,]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)?$'
     result = re.fullmatch(pattern, value_date)
 
@@ -116,22 +118,102 @@ def check_hash():
     pass
 
 
-def find_method(method_name, service_schema):
+class Config(abc.ABC):
+    address: str
+    username: str
+    password: str
+    timeout: int
+    port: int
+
+    def __init__(self, address, username, password, timeout: int, port: int):
+        self.address = address
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+        self.port = port
+
+
+class ConfigAMQP(Config):
+    quenue: str
+    virtualhost: str
+    exchange: str
+
+    def __init__(self, address, username, password, timeout, port, quenue, virtualhost, exchange):
+        super().__init__(address, username, password, timeout, port)
+        self.quenue = quenue
+        self.virtualhost = virtualhost
+        self.exchange = exchange
+
+
+class ConfigHTTP(Config):
+    auth: bool
+    ssl: bool
+    type: str
+    endpoint: str
+
+    def __init__(self, address, auth, ssl, type_http, endpoint, username, password, timeout: int, port: int):
+        super().__init__(address, username, password, timeout, port)
+        self.auth = auth
+        self.ssl = ssl
+        self.type = type_http
+        self.endpoint = endpoint
+
+
+class Param(object):
+    type: str
+    length: int
+    is_required: bool
+
+    def __init__(self, type_param, length, is_required, name):
+        self.type = type_param
+        self.length = length
+        self.is_required = is_required
+        self.name = name
+
+
+class MethodApi(object):
+    params: List[Param]
+    params = list()
+    type_connection: str
+    type_method: str
+    config: Union[ConfigAMQP, ConfigHTTP]
+    name: str
+
+    def __init__(self, params: List, type_conn, type_method, config: dict, name):
+        if isinstance(params, dict):
+            params = [params]
+        for param in params:
+            name = list(param.keys())[0]
+            self.params.append(Param(*param[name], name=name))
+        self.type_conn = type_conn
+        self.type_method = type_method
+        if type_conn == 'AMQP':
+            self.config = ConfigAMQP(**config)
+        elif type_conn == 'HTTP':
+            self.config = ConfigHTTP(**config)
+        else:
+            ValueError(f'Неизвестный тип подключения {type_conn}')
+        self.name = name
+
+
+def find_method(method_name, service_schema: dict):
     """ Поиск метода в схеме, возвращает метод с типом подключения """
     for key, value in service_schema.items():
         if 'methods' not in value:
             continue
+
+        method: MethodApi
         if 'write' in value['methods']:
             for method_key, method_value in value['methods']['write'].items():
                 if method_key == method_name:
-                    method = {'Params': method_value.copy(), 'TypeConnection': key, 'TypeMethod': 'read',
-                              'Config': value['config'], 'MethodName': method_name}
+                    method = MethodApi(params=method_value.copy(), type_conn=key, type_method='write',
+                                       config=value['config'], name=method_name)
                     return method
         if 'read' in value['methods']:
             for method_key, method_value in value['methods']['read'].items():
                 if method_key == method_name:
-                    method = {'Params': method_value.copy(), 'TypeConnection': key, 'TypeMethod': 'write',
-                              'Config': value['config'], 'MethodName': method_name}
+                    method = MethodApi(params=method_value.copy(), type_conn=key, type_method='read',
+                                       config=value['config'], name=method_name)
                     return method
 
     raise MethodNotFound
@@ -139,4 +221,5 @@ def find_method(method_name, service_schema):
 
 def check_hash_sum(message):
     """ Проверка хеш суммы сообщения при получении """
+    # TODO: сделать проверку хеш-суммы
     pass

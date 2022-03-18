@@ -94,4 +94,3 @@ def test_date_check_fail_format():
         check_date(date)
     except AssertionError:
         assert True
-

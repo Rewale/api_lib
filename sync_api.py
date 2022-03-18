@@ -18,11 +18,32 @@ class NotFoundParams(Exception):
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
 
-    def __init__(self, service_name: str, url='http://apidev.mezex.lan/getApiStructProgr', schema: dict = None):
+    def __init__(self, service_name: str,
+                 user_api,
+                 pass_api,
+                 methods: dict = None,
+                 url='http://apidev.mezex.lan/getApiStructProgr',
+                 schema: dict = None):
         r"""
         Args:
+            user_api: логин для получения схемы
+            pass_api: пароль для получения схемы
+            url: адрес для схемы
             service_name: Название текущего сервиса
         """
+        # TODO: Проверка methods на соответствие схеме
+
+        self.service_name = service_name
+
+        # Данные для получения схемы апи
+        self.url = url
+        self.user_api = user_api
+        self.pass_api = pass_api
+
+        # Обработчики методов сервиса
+        self.methods_service = methods
+
+        # AMQP
         self.port = None
         self.pass_amqp = None
         self.queue = None
@@ -31,15 +52,18 @@ class ApiSync:
         self.user_amqp = None
         self.credentials = None
         self.credentials: pika.PlainCredentials
-        self.url = url
+
+        # Для тестов можно загружать словарь
         self.schema = None
-        self.service_name = service_name
         if schema is not None:
             self.schema = schema
         self.get_schema_sync()
 
     def get_schema_sync(self) -> dict:
-        # self.schema = json.loads(requests.post(self.url, data={'format': 'json'}).text)
+        if self.schema is None:
+            # TODO: get или post?
+            self.schema = json.loads(requests.get(self.url, auth=HTTPBasicAuth(self.user_api, self.pass_api),
+                                                  data={'format': 'json'}).text)
 
         self.queue = get_queue_service(self.service_name, self.schema)
         self.exchange = get_exchange_service(self.service_name, self.schema)
@@ -75,7 +99,7 @@ class ApiSync:
             service_callback = data['service_callback']
             config_service = self.schema[service_callback]['AMQP']['config']
             # Вызов функции для обработки метода
-            callback_message = kwargs[data['method']](params_method)
+            callback_message = self.methods_service[data['method']](params_method)
 
             ch.basic_publish(exchange=self.exchange,
                              routing_key=get_route_key(config_service['quenue']),
