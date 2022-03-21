@@ -8,8 +8,8 @@ from requests.auth import HTTPBasicAuth
 
 from utils.custom_exceptions import (ServiceNotFound)
 from utils.rabbit_utils import *
-from utils.validation_utils import find_method, check_params, check_method_available, InputParam, MethodApi, ConfigAMQP, \
-    check_rls
+from utils.validation_utils import find_method, check_method_available, InputParam, MethodApi, ConfigAMQP, \
+    check_rls, ConfigHTTP
 
 
 class NotFoundParams(Exception):
@@ -65,7 +65,7 @@ class ApiSync:
         if self.schema is None:
             # TODO: get или post?
             self.schema = json.loads(requests.post(self.url, auth=HTTPBasicAuth(self.user_api, self.pass_api),
-                                                  data={'format': 'json'}).text)
+                                                   data={'format': 'json'}).text)
 
         self.queue = get_queue_service(self.service_name, self.schema)
         self.exchange = get_exchange_service(self.service_name, self.schema)
@@ -97,7 +97,7 @@ class ApiSync:
                 return
 
             service_callback = data['service_callback']
-            check_rls(service_from_schema=self.schema[self.service_name], service_to_name=self.service_name,
+            check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
                       service_from_name=service_callback, method_name=data['method'])
             config_service = self.schema[service_callback]['AMQP']['config']
             # Вызов функции для обработки метода
@@ -168,52 +168,39 @@ class ApiSync:
         if requested_service not in self.schema:
             raise ServiceNotFound
         method = find_method(method_name, self.schema[requested_service])
-        method.check_params(params)
+        check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
         # TODO: RLS
         # check_method_available(method, self.schema[self.service_name], requested_service)
 
         if method.type_conn == 'HTTP':
-            return self.make_request_api_http(method, params)
+            return json.loads(self.make_request_api_http(method, params))
 
         if method.type_conn == 'AMQP':
-            return self.make_request_api_amqp(method, params)
+            return json.loads(self.make_request_api_amqp(method, params))
 
     @staticmethod
-    def make_request_api_http(method: dict, params: Union[List[InputParam], InputParam]) -> Union[str, list]:
+    def make_request_api_http(method: MethodApi, params: List[InputParam]) -> str:
         r"""
         Запрос на определенный метод сервиса через http.
 
         Args:
-            method (dict): Метод отправки.
-            params (List[dict], dict): Параметры, может быть набором параметров.
+            method : Метод отправки.
+            params : Параметры.
 
         Returns:
-            str, list: Ответ сообщений (или сообщения, в зависимости от params)
+            str: Ответ сервиса.
         """
+        url = method.get_url()
+        message = method.get_message_http(params)
+        # headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        auth = None
+        if method.config.auth:
+            auth = (method.config.username, method.config.password)
 
-        def make_single_request(param):
-            config = method['Config']
-            url = f"http://{config['address']}:{config['port']}{config['endpoint']}{method['MethodName']}"
-            if config['auth']:
-                auth = HTTPBasicAuth(config['username'],
-                                     config['password'])
-            else:
-                auth = None
-
-            if config['type'] == 'POST':
-                return requests.post(url, data=param, auth=auth).text
-            elif config['type'] == 'GET':
-                return requests.get(url, params=param, auth=auth).text
-
-        if isinstance(params, dict):
-            return make_single_request(params)
-        if isinstance(params, list):
-            response = list()
-            for param in params:
-                response.append(make_single_request(param))
-            return response
-
-        raise ValueError
+        if method.config.type == 'POST':
+            return requests.post(url, data=message, auth=auth).text
+        if method.config.type == 'GET':
+            return requests.get(url, data=message, auth=auth).text
 
     def _open_amqp_connection_current_service(self):
         connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -223,30 +210,23 @@ class ApiSync:
 
         return connection
 
-    def make_request_api_amqp(self, method: MethodApi, params: List[InputParam]):
+    def make_request_api_amqp(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
         r"""
         Запрос на определенный метод сервиса через кролика.
 
         Args:
             method (dict): Метод отправки.
             params (List[dict], dict): Параметры, может быть набором параметров.
+            callback_method_name: Имя метода - обработчика колбека.
 
         Returns:
-            str, list: Айдишники сообщений (или сообщения, в зависимости от params)
+            str: id отправленного сообщения
         """
-        method.config: ConfigAMQP
-        method.check_params(params)
+        # TODO: добавить проверку РЛС
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()
-        # channel.queue_declare(queue=method.config.quenue)
-        # channel.exchange_declare(exchange=method.config.exchange)
 
-        message: dict = {'service_callback': self.service_name, 'method': method.name, 'method_callback': ''}
-        for i in params:
-            message[i.name] = i.value
-
-        hash_id = hashlib.md5(json.dumps(message).encode('utf-8'))
-        message['id'] = str(hash_id)
+        message = method.get_message_amqp(params, self.service_name, callback_method_name)
 
         channel.basic_publish(exchange=method.config.exchange,
                               routing_key=get_route_key(method.config.quenue),
@@ -254,3 +234,5 @@ class ApiSync:
 
         channel.close()
         connection.close()
+
+        return message['id']

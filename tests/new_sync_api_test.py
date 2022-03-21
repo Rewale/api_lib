@@ -38,8 +38,7 @@ class TestAMQPSyncApi(unittest.TestCase):
             api_callback = ApiSync(service_name='CallbackService', schema=self.test_schema,
                                    pass_api='test', user_api='test')
 
-    def test_send_message(self):
-        """ Начать слушать очередь """
+    def test_send_message_amqp(self):
         # Запуск "Сервиса№1"
         self.thread = threading.Thread(target=self.api_callback.listen_queue)
         self.thread.start()
@@ -55,3 +54,23 @@ class TestAMQPSyncApi(unittest.TestCase):
         # и попало в пользовательский обработчик
         self.assertTrue(answer == {'test_str': '123'})
         # TODO: чтение очереди колбеков
+
+    def test_send_message_http(self):
+        api = ApiSync(service_name='BDVPROGR',
+                      user_api='user',
+                      pass_api='Ef-PgjJ3',
+                      methods={'add_client': '123', 'update_client': '123'})
+
+        assert api.send_request_api(method_name='getApiStruct',
+                                    requested_service='API',
+                                    params=[InputParam(name='format', value='json')])['API']
+        
+    def test_send_message_http_rls_fail(self):
+        api = ApiSync(service_name='BDVPROGR',
+                      user_api='user',
+                      pass_api='Ef-PgjJ3',
+                      methods={'add_client': '123', 'update_client': '123'})
+        with self.assertRaises(AllServiceMethodsNotAllowed):
+            var = api.send_request_api(method_name='update_client',
+                                       requested_service='TAFPROGR',
+                                       params=[InputParam(name='format', value='json')])['API']

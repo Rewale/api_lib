@@ -1,12 +1,9 @@
 import asyncio
 import json
 import multiprocessing
-from time import sleep
 
-import redis_read_worker
-import datetime
 from async_api import ApiAsync
-from tests.async_send_test import foo, test_messages, test_method
+from tests.old_tests.async_send_test import test_messages, test_method
 
 loop = asyncio.get_event_loop()
 api: ApiAsync = loop.run_until_complete(ApiAsync.create_api_async('RECOGNIZE'))
@@ -96,8 +93,6 @@ test_method = {
 def test_rpc():
     def run_psevdoservice():
         """ Эмуляция сервиса """
-        from datetime import datetime
-        from time import sleep
         import pika
         connection = pika.BlockingConnection(pika.ConnectionParameters(
             virtual_host='/',

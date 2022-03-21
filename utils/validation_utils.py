@@ -4,6 +4,7 @@ import hashlib
 import re
 import datetime
 import json
+import uuid
 from typing import Union, List
 from .rabbit_utils import *
 
@@ -31,13 +32,19 @@ class ConfigAMQP(Config):
 
 class ConfigHTTP(Config):
 
-    def __init__(self, address, auth: bool, ssl: bool, type_http, endpoint, username, password, timeout: int,
+    def __init__(self, address, auth: bool, ssl: bool, type, endpoint, username, password, timeout: int,
                  port: int):
         super().__init__(address, username, password, timeout, port)
         self.auth = auth
         self.ssl = ssl
-        self.type = type_http
+        self.type = type
         self.endpoint = endpoint
+
+    def get_url(self, method_name):
+        # TODO: убрать после тестов
+        # url = f"http{'s' if self.ssl else ''}://{self.address}:{self.port}{self.endpoint}{method_name}"
+        url = f"http{'s' if self.ssl else ''}://{self.address}{self.endpoint}{method_name}"
+        return url
 
 
 class Param(object):
@@ -49,7 +56,8 @@ class Param(object):
         self.name = name
 
     def check_value(self, value: any):
-        # TODO проверка на бинарный тип, md5, guid
+        # TODO проверка на бинарный тип, md5
+        # TODO более подробная обработка ошибок валидации данных
         value_type = self.type
         size = self.length
 
@@ -60,19 +68,23 @@ class Param(object):
         elif value_type == 'int':
             assert isinstance(value, int)
             if size is not None:
-                assert value <= 10 ** size
+                assert len(str(value)) <= size
         elif value_type == 'guid':
-            assert isinstance(value, str) and len(value) == 36
+            assert uuid.UUID(value)
         elif value_type == 'md5':
             hashlib.md5(value)
         elif value_type == 'json':
             json.loads(value)
         elif value_type == 'bin':
-            pass
+            assert isinstance(value, bytes)
         elif value_type == 'base64':
             assert isinstance(value, str)
+            if not value.startswith('base64='):
+                ValueError('Параметр с типов base64 должен начинаться с base64=')
         elif value_type == 'date':
             datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+        elif value_type == 'float':
+            assert isinstance(value, int)
         elif value_type == 'bool':
             assert isinstance(value, bool)
 
@@ -90,6 +102,9 @@ class InputParam(object):
             list_input_params.append(InputParam(name=name, value=value))
 
         return list_input_params
+
+    def to_dict(self):
+        return {self.name: self.value}
 
 
 class MessageApi(object):
@@ -140,6 +155,36 @@ class MethodApi(object):
                 raise RequireParamNotSet(f'Обязательный параметр {param.name} не задан')
 
         return True
+
+    def get_url(self):
+        # TODO: сделать для amqp
+        return self.config.get_url(self.name)
+
+    def get_message_http(self, params: List[InputParam]) -> Union[str, dict] :
+        self.check_params(params)
+
+        if len(params) == 1:
+            params = params[0].to_dict()
+        else:
+            params = [param.to_dict() for param in params]
+
+        if isinstance(self.config, ConfigHTTP):
+            # return json.dumps(params, ensure_ascii=True, default=str)
+            return params
+
+    def get_message_amqp(self, params: List[InputParam], service_name: str, callback_method_name: str):
+        self.check_params(params)
+        if not isinstance(self.config, ConfigAMQP):
+            message: dict = {'service_callback': service_name,
+                             'method': self.name,
+                             'method_callback': callback_method_name}
+            for i in params:
+                message[i.name] = i.value
+
+            hash_id = hashlib.md5(json.dumps(message, ensure_ascii=True, default=str).encode('utf-8'))
+            message['id'] = str(hash_id)
+
+            return message
 
 
 def find_method(method_name, service_schema: dict):
@@ -216,59 +261,58 @@ def check_date(value_date: str):
     assert result is not None
 
 
-def check_params(method: MethodApi, params: Union[dict, list]):
-    r"""
-    Валидация параметров
-
-    Args:
-        method: Параметры метода
-        params: Передаваемые параметры в api.
-    Raises:
-        AssertionError - тип параметра не соответствует типу в методе.
-        RequireParamNotSet - не указан обязательный параметр.
-        ParamNotFound - параметр не найден
-    Return:
-        Всегда true - иначе исключение
-    """
-
-    def check_param(param: dict):
-        # TODO проверка на бинарный тип, md5, guid
-
-        for method_param, requirements in method_params['Params'].items():
-            value_type, size, is_req = requirements
-            if method_param not in param and is_req:
-                raise RequireParamNotSet
-            value = param[method_param]
-            if value_type == 'str':
-                assert isinstance(value, str)
-                if size is not None:
-                    assert len(value) <= size
-            elif value_type == 'int':
-                assert isinstance(value, int)
-                if size is not None:
-                    assert value <= 10 ** size
-            elif value_type == 'guid':
-                assert isinstance(value, str) and len(value) == 36
-            elif value_type == 'md5':
-                pass
-            elif value_type == 'json':
-                json.loads(value)
-            elif value_type == 'bin':
-                pass
-            elif value_type == 'base64':
-                assert isinstance(value, str)
-            elif value_type == 'date':
-                datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
-            elif value_type == 'bool':
-                assert isinstance(value, bool)
-
-    if isinstance(params, dict):
-        params = [params]
-
-    for param in params:
-        check_param(param)
-
-    return True
+# def check_params(method: MethodApi, params: Union[dict, list]):
+#     r"""
+#     Валидация параметров
+#
+#     Args:
+#         method: Параметры метода
+#         params: Передаваемые параметры в api.
+#     Raises:
+#         AssertionError - тип параметра не соответствует типу в методе.
+#         RequireParamNotSet - не указан обязательный параметр.
+#         ParamNotFound - параметр не найден
+#     Return:
+#         Всегда true - иначе исключение
+#     """
+#
+#     def check_param(param: dict):
+#
+#         for method_param, requirements in param.items():
+#             value_type, size, is_req = requirements
+#             if method_param not in param and is_req:
+#                 raise RequireParamNotSet
+#             value = param[method_param]
+#             if value_type == 'str':
+#                 assert isinstance(value, str)
+#                 if size is not None:
+#                     assert len(value) <= size
+#             elif value_type == 'int':
+#                 assert isinstance(value, int)
+#                 if size is not None:
+#                     assert value <= 10 ** size
+#             elif value_type == 'guid':
+#                 assert isinstance(value, str) and len(value) == 36
+#             elif value_type == 'md5':
+#                 pass
+#             elif value_type == 'json':
+#                 json.loads(value)
+#             elif value_type == 'bin':
+#                 pass
+#             elif value_type == 'base64':
+#                 assert isinstance(value, str)
+#             elif value_type == 'date':
+#                 datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+#             elif value_type == 'bool':
+#                 assert isinstance(value, bool)
+#
+#     if isinstance(params, dict):
+#         params = [params]
+#
+#     for param in params:
+#         check_param(param)
+#
+#     return True
 
 
 def check_hash_sum(message):
