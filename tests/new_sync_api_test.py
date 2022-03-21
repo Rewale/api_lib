@@ -54,8 +54,4 @@ class TestAMQPSyncApi(unittest.TestCase):
         # Проверяем что сообщение было проверено серверов
         # и попало в пользовательский обработчик
         self.assertTrue(answer == {'test_str': '123'})
-
         # TODO: чтение очереди колбеков
-
-    # def tearDown(self) -> None:
-    #     self.thread.join(2)

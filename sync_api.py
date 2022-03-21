@@ -8,7 +8,8 @@ from requests.auth import HTTPBasicAuth
 
 from utils.custom_exceptions import (ServiceNotFound)
 from utils.rabbit_utils import *
-from utils.validation_utils import find_method, check_params, check_method_available, InputParam, MethodApi, ConfigAMQP
+from utils.validation_utils import find_method, check_params, check_method_available, InputParam, MethodApi, ConfigAMQP, \
+    check_rls
 
 
 class NotFoundParams(Exception):
@@ -58,12 +59,12 @@ class ApiSync:
             self.schema = schema
         self.get_schema_sync()
 
-        check_methods_handlers(schema[service_name], methods)
+        check_methods_handlers(self.schema[service_name], methods)
 
     def get_schema_sync(self) -> dict:
         if self.schema is None:
             # TODO: get или post?
-            self.schema = json.loads(requests.get(self.url, auth=HTTPBasicAuth(self.user_api, self.pass_api),
+            self.schema = json.loads(requests.post(self.url, auth=HTTPBasicAuth(self.user_api, self.pass_api),
                                                   data={'format': 'json'}).text)
 
         self.queue = get_queue_service(self.service_name, self.schema)
@@ -85,7 +86,6 @@ class ApiSync:
         def on_request(ch, method, props, body):
             queue_callback = None
             # Подтверждаем получение
-            ch.basic_ack(delivery_tag=method.delivery_tag)
             try:
                 data = json.loads(body.decode('utf-8'))
             except Exception as e:
@@ -97,6 +97,8 @@ class ApiSync:
                 return
 
             service_callback = data['service_callback']
+            check_rls(service_from_schema=self.schema[self.service_name], service_to_name=self.service_name,
+                      service_from_name=service_callback, method_name=data['method'])
             config_service = self.schema[service_callback]['AMQP']['config']
             # Вызов функции для обработки метода
             try:
@@ -109,6 +111,8 @@ class ApiSync:
                 print(e)
 
             # TODO проверка после обработки
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
             ch.basic_publish(exchange=self.exchange,
                              routing_key=get_route_key(config_service['quenue']),

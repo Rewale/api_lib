@@ -31,7 +31,8 @@ class ConfigAMQP(Config):
 
 class ConfigHTTP(Config):
 
-    def __init__(self, address, auth: bool, ssl: bool, type_http, endpoint, username, password, timeout: int, port: int):
+    def __init__(self, address, auth: bool, ssl: bool, type_http, endpoint, username, password, timeout: int,
+                 port: int):
         super().__init__(address, username, password, timeout, port)
         self.auth = auth
         self.ssl = ssl
@@ -270,11 +271,28 @@ def check_params(method: MethodApi, params: Union[dict, list]):
     return True
 
 
-def check_hash():
-    pass
-
-
 def check_hash_sum(message):
     """ Проверка хеш суммы сообщения при получении """
     # TODO: сделать проверку хеш-суммы
     pass
+
+
+def check_rls(service_from_schema: dict, service_to_name: str, service_from_name: str, method_name: str):
+    if 'RLS' not in service_from_schema:
+        return
+
+    if service_to_name not in service_from_schema['RLS']:
+        raise AllServiceMethodsNotAllowed(service_from=service_from_name, name_service=service_to_name)
+
+    if service_from_schema['RLS'][service_to_name] is None:
+        return
+
+    if 'disallowed' in service_from_schema['RLS'][service_to_name]:
+        if method_name in service_from_schema['RLS'][service_to_name]['disallowed']:
+            raise ServiceMethodNotAllowed(name_service=service_to_name, service_from=service_from_name,
+                                          name_method=method_name)
+
+    if 'allowed' in service_from_schema['RLS'][service_to_name]:
+        if method_name not in service_from_schema['RLS'][service_to_name]['allowed']:
+            raise ServiceMethodNotAllowed(name_service=service_to_name, service_from=service_from_name,
+                                          name_method=method_name)
