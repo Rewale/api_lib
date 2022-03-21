@@ -1,12 +1,168 @@
 """ Проверки """
 import abc
+import hashlib
 import re
 import datetime
 import json
 from typing import Union, List
 from .rabbit_utils import *
 
-from utils.custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound
+from utils.custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
+    ParamValidateFail
+
+
+class Config(abc.ABC):
+
+    def __init__(self, address, username, password, timeout: int, port: int):
+        self.address = address
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+        self.port = port
+
+
+class ConfigAMQP(Config):
+    def __init__(self, address, username, password, timeout, port, quenue, virtualhost, exchange):
+        super().__init__(address, username, password, timeout, port)
+        self.quenue = quenue
+        self.virtualhost = virtualhost
+        self.exchange = exchange
+
+
+class ConfigHTTP(Config):
+
+    def __init__(self, address, auth: bool, ssl: bool, type_http, endpoint, username, password, timeout: int, port: int):
+        super().__init__(address, username, password, timeout, port)
+        self.auth = auth
+        self.ssl = ssl
+        self.type = type_http
+        self.endpoint = endpoint
+
+
+class Param(object):
+
+    def __init__(self, type_param, length, is_required, name):
+        self.type = type_param
+        self.length = length
+        self.is_required = is_required
+        self.name = name
+
+    def check_value(self, value: any):
+        # TODO проверка на бинарный тип, md5, guid
+        value_type = self.type
+        size = self.length
+
+        if value_type == 'str':
+            assert isinstance(value, str)
+            if size is not None:
+                assert len(value) <= size
+        elif value_type == 'int':
+            assert isinstance(value, int)
+            if size is not None:
+                assert value <= 10 ** size
+        elif value_type == 'guid':
+            assert isinstance(value, str) and len(value) == 36
+        elif value_type == 'md5':
+            hashlib.md5(value)
+        elif value_type == 'json':
+            json.loads(value)
+        elif value_type == 'bin':
+            pass
+        elif value_type == 'base64':
+            assert isinstance(value, str)
+        elif value_type == 'date':
+            datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+        elif value_type == 'bool':
+            assert isinstance(value, bool)
+
+
+class InputParam(object):
+
+    def __init__(self, name: str, value: any):
+        self.name = name
+        self.value = value
+
+    @staticmethod
+    def from_dict(param: dict):
+        list_input_params: List[InputParam] = list()
+        for name, value in param.items():
+            list_input_params.append(InputParam(name=name, value=value))
+
+        return list_input_params
+
+
+class MessageApi(object):
+
+    def __init__(self):
+        self.response_id = None
+        self.id = None
+        self.method = None
+        self.service_callback = None
+
+
+class MethodApi(object):
+
+    def __init__(self, params: dict, type_conn, type_method, config: dict, method_name):
+        self.params = list()
+        for name, value in params.items():
+            self.params.append(Param(*value, name=name))
+        self.type_conn = type_conn
+        self.type_method = type_method
+        if type_conn == 'AMQP':
+            self.config: ConfigAMQP
+            self.config = ConfigAMQP(**config)
+        elif type_conn == 'HTTP':
+            self.config: ConfigHTTP
+            self.config = ConfigHTTP(**config)
+        else:
+            ValueError(f'Неизвестный тип подключения {type_conn}')
+        self.name = method_name
+
+    def check_params(self, input_params: List[InputParam]):
+        params_copy = self.params.copy()
+        for input_param in input_params:
+            # Проверка на существование параметра
+            try:
+                param = next(x for x in params_copy if x.name == input_param.name)
+            except StopIteration:
+                raise ParamNotFound(f'Параметра с именем {input_param.name} не существует')
+            # Проверка на тип
+            try:
+                param.check_value(input_param.value)
+            except Exception as e:
+                raise ParamValidateFail(f'Параметр {param.name} ошибка {e}')
+
+            param.is_set = True
+        # Проверка на наличие всех обязательных параметров
+        for param in params_copy:
+            if param.is_required and not hasattr(param, 'is_set'):
+                raise RequireParamNotSet(f'Обязательный параметр {param.name} не задан')
+
+        return True
+
+
+def find_method(method_name, service_schema: dict):
+    """ Поиск метода в схеме, возвращает метод с типом подключения """
+    for key, value in service_schema.items():
+        if 'methods' not in value:
+            continue
+
+        method: MethodApi
+        if 'write' in value['methods']:
+            for method_key, method_value in value['methods']['write'].items():
+                if method_key == method_name:
+                    method = MethodApi(params=method_value, type_conn=key, type_method='write',
+                                       config=value['config'], method_name=method_name)
+                    return method
+        if 'read' in value['methods']:
+            for method_key, method_value in value['methods']['read'].items():
+                if method_key == method_name:
+                    method = MethodApi(params=method_value, type_conn=key, type_method='read',
+                                       config=value['config'], method_name=method_name)
+
+                    return method
+
+    raise MethodNotFound
 
 
 def check_method_available(method, curr_service_schema, requested_service):
@@ -59,12 +215,12 @@ def check_date(value_date: str):
     assert result is not None
 
 
-def check_params(method_params: List[dict], params: Union[dict, list]):
+def check_params(method: MethodApi, params: Union[dict, list]):
     r"""
     Валидация параметров
 
     Args:
-        method_params: Параметры метода api.
+        method: Параметры метода
         params: Передаваемые параметры в api.
     Raises:
         AssertionError - тип параметра не соответствует типу в методе.
@@ -116,107 +272,6 @@ def check_params(method_params: List[dict], params: Union[dict, list]):
 
 def check_hash():
     pass
-
-
-class Config(abc.ABC):
-    address: str
-    username: str
-    password: str
-    timeout: int
-    port: int
-
-    def __init__(self, address, username, password, timeout: int, port: int):
-        self.address = address
-        self.username = username
-        self.password = password
-        self.timeout = timeout
-        self.port = port
-
-
-class ConfigAMQP(Config):
-    quenue: str
-    virtualhost: str
-    exchange: str
-
-    def __init__(self, address, username, password, timeout, port, quenue, virtualhost, exchange):
-        super().__init__(address, username, password, timeout, port)
-        self.quenue = quenue
-        self.virtualhost = virtualhost
-        self.exchange = exchange
-
-
-class ConfigHTTP(Config):
-    auth: bool
-    ssl: bool
-    type: str
-    endpoint: str
-
-    def __init__(self, address, auth, ssl, type_http, endpoint, username, password, timeout: int, port: int):
-        super().__init__(address, username, password, timeout, port)
-        self.auth = auth
-        self.ssl = ssl
-        self.type = type_http
-        self.endpoint = endpoint
-
-
-class Param(object):
-    type: str
-    length: int
-    is_required: bool
-
-    def __init__(self, type_param, length, is_required, name):
-        self.type = type_param
-        self.length = length
-        self.is_required = is_required
-        self.name = name
-
-
-class MethodApi(object):
-    params: List[Param]
-    params = list()
-    type_connection: str
-    type_method: str
-    config: Union[ConfigAMQP, ConfigHTTP]
-    name: str
-
-    def __init__(self, params: List, type_conn, type_method, config: dict, name):
-        if isinstance(params, dict):
-            params = [params]
-        for param in params:
-            name = list(param.keys())[0]
-            self.params.append(Param(*param[name], name=name))
-        self.type_conn = type_conn
-        self.type_method = type_method
-        if type_conn == 'AMQP':
-            self.config = ConfigAMQP(**config)
-        elif type_conn == 'HTTP':
-            self.config = ConfigHTTP(**config)
-        else:
-            ValueError(f'Неизвестный тип подключения {type_conn}')
-        self.name = name
-
-
-def find_method(method_name, service_schema: dict):
-    """ Поиск метода в схеме, возвращает метод с типом подключения """
-    for key, value in service_schema.items():
-        if 'methods' not in value:
-            continue
-
-        method: MethodApi
-        if 'write' in value['methods']:
-            for method_key, method_value in value['methods']['write'].items():
-                if method_key == method_name:
-                    method = MethodApi(params=method_value.copy(), type_conn=key, type_method='write',
-                                       config=value['config'], name=method_name)
-                    return method
-        if 'read' in value['methods']:
-            for method_key, method_value in value['methods']['read'].items():
-                if method_key == method_name:
-                    method = MethodApi(params=method_value.copy(), type_conn=key, type_method='read',
-                                       config=value['config'], name=method_name)
-                    return method
-
-    raise MethodNotFound
 
 
 def check_hash_sum(message):

@@ -6,15 +6,18 @@ test_schema_rpc = {
                 'port': 5672,
                 'username': 'guest',
                 'password': 'guest',
-                'exchange': '',
-                'quenue': 'SendService_q',
+                'exchange': 'callbackExchange',
+                'quenue': 'callbackQueue',
                 'virtualhost': '/',
                 'timeout': 30000
             },
             'methods': {
                 'write': {
                     'test_method': {
-                        'test_str': ['str', 32, True]
+                        'test_str': ['str', 32, True],
+                        'test_not_set': ['str', 32, False]
+                        # TODO: все типы данных
+
                     }
 
                 }
@@ -29,18 +32,18 @@ test_schema_rpc = {
                 'port': 5672,
                 'username': 'guest',
                 'password': 'guest',
-                'exchange': '',
-                'quenue': 'ReadService_q',
+                'exchange': 'sendExchange',
+                'quenue': 'sendQueue',
                 'virtualhost': '/',
                 'timeout': 30000
             },
             'methods': {
-                'write': {
-                    'test_method': {
-                        'test_str': ['str', 32, True]
-                    }
-
-                }
+                # 'write': {
+                #     'test_method': {
+                #         'test_str': ['str', 32, True]
+                #     }
+                #
+                # }
             }
         }
 

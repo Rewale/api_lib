@@ -8,7 +8,7 @@ from requests.auth import HTTPBasicAuth
 
 from utils.custom_exceptions import (ServiceNotFound)
 from utils.rabbit_utils import *
-from utils.validation_utils import find_method, check_params, check_method_available
+from utils.validation_utils import find_method, check_params, check_method_available, InputParam, MethodApi, ConfigAMQP
 
 
 class NotFoundParams(Exception):
@@ -30,9 +30,8 @@ class ApiSync:
             pass_api: пароль для получения схемы
             url: адрес для схемы
             service_name: Название текущего сервиса
+            methods: Словарь обработчиков для каждого метода сервиса
         """
-        # TODO: Проверка methods на соответствие схеме
-
         self.service_name = service_name
 
         # Данные для получения схемы апи
@@ -59,6 +58,8 @@ class ApiSync:
             self.schema = schema
         self.get_schema_sync()
 
+        check_methods_handlers(schema[service_name], methods)
+
     def get_schema_sync(self) -> dict:
         if self.schema is None:
             # TODO: get или post?
@@ -75,11 +76,10 @@ class ApiSync:
 
         return self.schema
 
-    def listen_queue(self, **kwargs):
+    def listen_queue(self):
         """
             БЛОКИРУЮЩАЯ ФУНКЦИЯ
             Начать слушать очередь сообщений сервиса
-            methodName=Callable
         """
 
         def on_request(ch, method, props, body):
@@ -92,14 +92,23 @@ class ApiSync:
                 return
 
             try:
-                params_method = self.check_input_params_amqp(data)
+                params_method = self.check_params_amqp(data)
             except AssertionError:
                 return
 
             service_callback = data['service_callback']
             config_service = self.schema[service_callback]['AMQP']['config']
             # Вызов функции для обработки метода
-            callback_message = self.methods_service[data['method']](params_method)
+            try:
+                callback_message = self.methods_service[data['method']](params_method)
+            except Exception as e:
+                # TODO метод не поддерживается
+                ch.basic_publish(exchange=self.exchange,
+                                 routing_key=get_route_key(config_service['quenue']),
+                                 body=callback_message)
+                print(e)
+
+            # TODO проверка после обработки
 
             ch.basic_publish(exchange=self.exchange,
                              routing_key=get_route_key(config_service['quenue']),
@@ -111,13 +120,13 @@ class ApiSync:
         channel.basic_consume(on_message_callback=on_request, queue=self.queue)
         channel.start_consuming()
 
-    def check_input_params_amqp(self, params: dict):
-        """ Проверка входящих параметров """
+    def check_params_amqp(self, params: dict):
+        """ Проверка входящих/исходящих параметров """
         # Проверка наличия id, response_id, method, method_callback
         assert 'id' in params.keys() \
                and 'service_callback' in params.keys() \
                and 'method' in params.keys() \
-               and 'method_callback'
+               and 'method_callback' in params.keys()
 
         try:
             schema_service = self.schema[params['service_callback']]
@@ -131,42 +140,42 @@ class ApiSync:
         del params_method['method']
         del params_method['method_callback']
 
-        check_params(method, params_method)
+        method.check_params(InputParam.from_dict(params_method))
+
         return params_method
 
     def send_request_api(self, method_name: str,
-                         params: Union[dict, List[dict]], requested_service: str):
+                         params: Union[InputParam, List[InputParam]], requested_service: str):
         r"""
-        Проверка доступности метода
+        Отправка запроса на сервис
 
         Args:
            method_name: имя метод апи.
-           params: Схема апи текущего сервиса.
+           params: Параметры.
            requested_service: Имя сервиса - адресата.
-           wait_answer: дожидаться ответа[Не используется]
         Raises:
            ServiceMethodNotAllowed - Метод сервиса не доступен из текущего метода.
            AssertionError - тип параметра не соответствует типу в методе.
            RequireParamNotSet - не указан обязательный параметр.
            ParamNotFound - параметр не найден
         Returns:
-           Ответ сообщений (или сообщения, в зависимости от params) - при HTTP или айдишники сообщений (или сообщения, в зависимости от params) - при AMQP
         """
 
         if requested_service not in self.schema:
             raise ServiceNotFound
         method = find_method(method_name, self.schema[requested_service])
-        check_params(method, params)
-        check_method_available(method, self.schema[self.service_name], requested_service)
+        method.check_params(params)
+        # TODO: RLS
+        # check_method_available(method, self.schema[self.service_name], requested_service)
 
-        if method['TypeConnection'] == 'HTTP':
+        if method.type_conn == 'HTTP':
             return self.make_request_api_http(method, params)
 
-        if method['TypeConnection'] == 'AMQP':
+        if method.type_conn == 'AMQP':
             return self.make_request_api_amqp(method, params)
 
     @staticmethod
-    def make_request_api_http(method: dict, params: Union[List[dict], dict]) -> Union[str, list]:
+    def make_request_api_http(method: dict, params: Union[List[InputParam], InputParam]) -> Union[str, list]:
         r"""
         Запрос на определенный метод сервиса через http.
 
@@ -210,7 +219,7 @@ class ApiSync:
 
         return connection
 
-    def make_request_api_amqp(self, method, params: Union[List[dict], dict]) -> Union[str, List[str]]:
+    def make_request_api_amqp(self, method: MethodApi, params: List[InputParam]):
         r"""
         Запрос на определенный метод сервиса через кролика.
 
@@ -221,29 +230,23 @@ class ApiSync:
         Returns:
             str, list: Айдишники сообщений (или сообщения, в зависимости от params)
         """
+        method.config: ConfigAMQP
+        method.check_params(params)
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()
-        channel.queue_declare(queue=method['config']['quenue'])
-        channel.exchange_declare(exchange=method['config']['exchange'])
+        # channel.queue_declare(queue=method.config.quenue)
+        # channel.exchange_declare(exchange=method.config.exchange)
 
-        def send_message(_param, correlation_id):
-            _param['id'] = str(correlation_id)
-            _param['service_callback'] = self.service_name
-            _param['method'] = method['MethodName']
-            channel.basic_publish(exchange=method['config']['exchange'],
-                                  routing_key=get_route_key(method['config']['quenue']),
-                                  body=bytes(json.dumps(params), 'utf-8'))
+        message: dict = {'service_callback': self.service_name, 'method': method.name, 'method_callback': ''}
+        for i in params:
+            message[i.name] = i.value
 
-        if isinstance(params, dict):
-            id = str(uuid.uuid4())
-            send_message(params, id)
-            return id
-        elif isinstance(params, list):
-            ids = []
-            for param in params:
-                id = str(uuid.uuid4())
-                send_message(param, str(uuid.uuid4()))
-                ids.append(id)
-            return ids
+        hash_id = hashlib.md5(json.dumps(message).encode('utf-8'))
+        message['id'] = str(hash_id)
+
+        channel.basic_publish(exchange=method.config.exchange,
+                              routing_key=get_route_key(method.config.quenue),
+                              body=bytes(json.dumps(message), 'utf-8'))
+
         channel.close()
         connection.close()

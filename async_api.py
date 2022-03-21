@@ -68,13 +68,13 @@ class ApiAsync(object):
             raise ServiceNotFound
         # TODO: перенести проверки в методы вызовов
         method = find_method(method_name, self.schema[requested_service])
-        if method['TypeConnection'] != 'AMQP' and is_rpc:
+        if method.type_conn != 'AMQP' and is_rpc:
             raise Exception('Только AMQP может иметь параметры is_callback и rpc')
         check_params(method, params)
         check_method_available(method, self.schema[requested_service], self.service_name)
-        if method['TypeConnection'] == 'HTTP':
+        if method.type_conn == 'HTTP':
             return await self.make_request_api_http(method, params)
-        if method['TypeConnection'] == 'AMQP':
+        if method.type_conn == 'AMQP':
             if is_rpc:
                 return await self.rpc_amqp(method, params, timeout=3)
             else:

@@ -1,11 +1,12 @@
 """ Модуль утилит для работы с кроликом """
 import hashlib
 import json
+from utils.custom_exceptions import *
 
 
 def get_route_key(queue_name: str):
     """ Оборачивает имя очереди в # """
-    return f'#{queue_name}#'
+    return f'{queue_name}'
 
 
 def service_amqp_url(service_name: dict):
@@ -68,3 +69,13 @@ def get_port_amqp_service(service_name: str, schema: dict):
 
 def get_method_service(service_name: str, method_name: str, schema: dict):
     return schema[service_name]['AMQP']['methods']['write'][method_name]
+
+
+def check_methods_handlers(service_schema: dict, methods: dict):
+    for name_type in service_schema['AMQP']['methods']:
+        for name_method in service_schema['AMQP']['methods'][name_type]:
+            if methods is None:
+                raise MethodsNotSet()
+            if name_method not in methods:
+                raise MethodNotSet(name_method)
+
