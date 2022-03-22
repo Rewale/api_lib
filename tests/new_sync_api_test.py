@@ -2,6 +2,7 @@
 import datetime
 import threading
 import unittest
+import uuid
 from time import sleep
 from utils.custom_exceptions import *
 
@@ -46,13 +47,22 @@ class TestAMQPSyncApi(unittest.TestCase):
         # Клиент отправляет сообщение в очередь сервиса#1
         self.api_sending.send_request_api(method_name='test_method',
                                           requested_service='CallbackService',
-                                          params=[InputParam(name='test_str', value='123')])
+                                          params=[
+                                              InputParam(name='test_str', value='123'),
+                                              InputParam(name='guid', value=str(uuid.uuid4())),
+                                              InputParam(name='bin', value=b'123123'),
+                                              InputParam(name='float', value=3333.3333),
+                                              InputParam(name='int', value=3333),
+                                              InputParam(name='bool', value=True),
+                                              InputParam(name='base64', value='base64=312fdvfbg2tgt'),
+                                              InputParam(name='date', value='2002-12-12T05:55:33±05:00'),
+                                          ])
 
         sleep(0.01)
 
         # Проверяем что сообщение было проверено серверов
         # и попало в пользовательский обработчик
-        self.assertTrue(answer == {'test_str': '123'})
+        self.assertTrue(answer != '')
         # TODO: чтение очереди колбеков
 
     def test_send_message_http(self):
@@ -72,5 +82,15 @@ class TestAMQPSyncApi(unittest.TestCase):
                       methods={'add_client': '123', 'update_client': '123'})
         with self.assertRaises(AllServiceMethodsNotAllowed):
             var = api.send_request_api(method_name='update_client',
+                                       requested_service='TAFPROGR',
+                                       params=[InputParam(name='format', value='json')])['API']
+
+    def test_send_message_http_not_exist_method(self):
+        api = ApiSync(service_name='BDVPROGR',
+                      user_api='user',
+                      pass_api='Ef-PgjJ3',
+                      methods={'add_client': '123', 'update_client': '123'})
+        with self.assertRaises(MethodNotFound):
+            var = api.send_request_api(method_name='del_user',
                                        requested_service='TAFPROGR',
                                        params=[InputParam(name='format', value='json')])['API']

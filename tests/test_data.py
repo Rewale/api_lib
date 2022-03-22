@@ -15,9 +15,14 @@ test_schema_rpc = {
                 'write': {
                     'test_method': {
                         'test_str': ['str', 32, True],
-                        'test_not_set': ['str', 32, False]
-                        # TODO: все типы данных
-
+                        'test_not_set': ['str', 32, False],
+                        'guid': ['guid', 32, False],
+                        'bin': ['bin', 32, True],
+                        'float': ['float', 32, True],
+                        'int': ['int', 32, True],
+                        'bool': ['bool', None, True],
+                        'base64': ['base64', None, True],
+                        'date': ['date', None, True],
                     }
 
                 }

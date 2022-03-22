@@ -62,31 +62,63 @@ class Param(object):
         size = self.length
 
         if value_type == 'str':
-            assert isinstance(value, str)
+            if not isinstance(value, str):
+                raise WrongTypeParam(self.name, 'str')
             if size is not None:
-                assert len(value) <= size
+                if len(value) > size:
+                    raise WrongSizeParam(self.name, size)
         elif value_type == 'int':
-            assert isinstance(value, int)
+            if not isinstance(value, int):
+                raise WrongTypeParam(self.name, 'int')
             if size is not None:
-                assert len(str(value)) <= size
+                if len(str(value)) > size:
+                    raise WrongSizeParam(self.name, size)
         elif value_type == 'guid':
-            assert uuid.UUID(value)
+            try:
+                uuid.UUID(value)
+            except Exception:
+                raise WrongTypeParam(self.name, 'guid')
         elif value_type == 'md5':
-            hashlib.md5(value)
+            try:
+                hashlib.md5(value)
+            except:
+                raise WrongTypeParam(self.name, 'md5')
         elif value_type == 'json':
-            json.loads(value)
+            try:
+                json.loads(value)
+            except:
+                raise WrongTypeParam(self.name, 'json')
         elif value_type == 'bin':
-            assert isinstance(value, bytes)
+            # TODO: разобраться в способе передачи bin
+            pass
+            # if not isinstance(value, bytes):
+            #     raise WrongTypeParam(self.name, 'bin')
         elif value_type == 'base64':
-            assert isinstance(value, str)
+            if not isinstance(value, str):
+                raise WrongTypeParam(self.name, 'base64')
             if not value.startswith('base64='):
                 ValueError('Параметр с типов base64 должен начинаться с base64=')
         elif value_type == 'date':
-            datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+            value: str
+            regex = r'^([0-9]{4})-([0-1][0-9])-([0-3][0-9])T([0-1][0-9]|[2][0-3]):([0-5][0-9]):([0-5][0-9])±(0[' \
+                    r'0-9]|1[0-9]|2[0-3]):([0-5][0-9])$'
+            if not re.fullmatch(regex, value):
+                raise WrongTypeParam(self.name, 'date')
         elif value_type == 'float':
-            assert isinstance(value, int)
+            if not isinstance(value, float):
+                raise WrongTypeParam(self.name, 'float')
         elif value_type == 'bool':
-            assert isinstance(value, bool)
+            if not isinstance(value, bool):
+                raise WrongTypeParam(self.name, 'bool')
+
+
+def convert_date_into_iso(convert_date: datetime.datetime) -> str:
+    """
+    :param convert_date: Дата
+    :return: Строковое представление даты в исо формате YYYY-MM-DDThh:mm:ss±hh:mm
+    """
+
+    return convert_date.replace(microsecond=0).astimezone().isoformat().replace('+', '±')
 
 
 class InputParam(object):
@@ -103,8 +135,15 @@ class InputParam(object):
 
         return list_input_params
 
+    def get_value(self):
+        """ Возвращает отформатирванное значение для серилизации """
+        if isinstance(self.value, bytes):
+            return self.value.decode('utf-8')
+
+        return self.value
+
     def to_dict(self):
-        return {self.name: self.value}
+        return {self.name: self.get_value()}
 
 
 class MessageApi(object):
@@ -143,10 +182,7 @@ class MethodApi(object):
             except StopIteration:
                 raise ParamNotFound(f'Параметра с именем {input_param.name} не существует')
             # Проверка на тип
-            try:
-                param.check_value(input_param.value)
-            except Exception as e:
-                raise ParamValidateFail(f'Параметр {param.name} ошибка {e}')
+            param.check_value(input_param.value)
 
             param.is_set = True
         # Проверка на наличие всех обязательных параметров
@@ -160,7 +196,7 @@ class MethodApi(object):
         # TODO: сделать для amqp
         return self.config.get_url(self.name)
 
-    def get_message_http(self, params: List[InputParam]) -> Union[str, dict] :
+    def get_message_http(self, params: List[InputParam]) -> Union[str, dict]:
         self.check_params(params)
 
         if len(params) == 1:
@@ -174,17 +210,57 @@ class MethodApi(object):
 
     def get_message_amqp(self, params: List[InputParam], service_name: str, callback_method_name: str):
         self.check_params(params)
-        if not isinstance(self.config, ConfigAMQP):
+        if isinstance(self.config, ConfigAMQP):
             message: dict = {'service_callback': service_name,
                              'method': self.name,
                              'method_callback': callback_method_name}
             for i in params:
-                message[i.name] = i.value
+                message[i.name] = i.get_value()
 
-            hash_id = hashlib.md5(json.dumps(message, ensure_ascii=True, default=str).encode('utf-8'))
+            hash_id = create_hash(message)
             message['id'] = str(hash_id)
 
             return message
+
+
+def create_callback_message_amqp(message: dict,
+                                 result: bool,
+                                 response_id: str,
+                                 service_name: str = None,
+                                 callback_method_name: str = None) -> str:
+    """
+    Получить отформатирванное сообщения с hash id для колбека
+    :param message: Сообщение в виде словаря из хендлера.
+    :param result: Успешность выполнения.
+    :param service_name: Название сервиса.
+    :param callback_method_name: Метод колбека для текущего сервиса.
+    :param response_id: ID сообщения на который делается колбек
+    :return: json-строка
+    """
+    correct_json = {
+        'response_id': response_id,
+        'method': callback_method_name,
+        'service_callback': service_name,
+        'message': {
+            'result': result,
+            'response': message
+        }
+    }
+
+    hash_id = create_hash(correct_json)
+    correct_json['id'] = hash_id
+
+    return serialize_message(correct_json)
+
+
+def serialize_message(message: dict) -> str:
+    """ Серилизация сообщения в json"""
+    return json.dumps(message, ensure_ascii=True, default=str)
+
+
+def create_hash(message: dict):
+    """ Хеш-id """
+    return hashlib.md5(serialize_message(message).encode('utf-8')).hexdigest()
 
 
 def find_method(method_name, service_schema: dict):
@@ -259,60 +335,6 @@ def check_date(value_date: str):
 
     assert len(value_date) == 25
     assert result is not None
-
-
-# def check_params(method: MethodApi, params: Union[dict, list]):
-#     r"""
-#     Валидация параметров
-#
-#     Args:
-#         method: Параметры метода
-#         params: Передаваемые параметры в api.
-#     Raises:
-#         AssertionError - тип параметра не соответствует типу в методе.
-#         RequireParamNotSet - не указан обязательный параметр.
-#         ParamNotFound - параметр не найден
-#     Return:
-#         Всегда true - иначе исключение
-#     """
-#
-#     def check_param(param: dict):
-#
-#         for method_param, requirements in param.items():
-#             value_type, size, is_req = requirements
-#             if method_param not in param and is_req:
-#                 raise RequireParamNotSet
-#             value = param[method_param]
-#             if value_type == 'str':
-#                 assert isinstance(value, str)
-#                 if size is not None:
-#                     assert len(value) <= size
-#             elif value_type == 'int':
-#                 assert isinstance(value, int)
-#                 if size is not None:
-#                     assert value <= 10 ** size
-#             elif value_type == 'guid':
-#                 assert isinstance(value, str) and len(value) == 36
-#             elif value_type == 'md5':
-#                 pass
-#             elif value_type == 'json':
-#                 json.loads(value)
-#             elif value_type == 'bin':
-#                 pass
-#             elif value_type == 'base64':
-#                 assert isinstance(value, str)
-#             elif value_type == 'date':
-#                 datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
-#             elif value_type == 'bool':
-#                 assert isinstance(value, bool)
-#
-#     if isinstance(params, dict):
-#         params = [params]
-#
-#     for param in params:
-#         check_param(param)
-#
-#     return True
 
 
 def check_hash_sum(message):

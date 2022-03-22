@@ -6,7 +6,7 @@ from utils.custom_exceptions import *
 
 def get_route_key(queue_name: str):
     """ Оборачивает имя очереди в # """
-    return f'{queue_name}'
+    return f'#{queue_name}#'
 
 
 def service_amqp_url(service_name: dict):
