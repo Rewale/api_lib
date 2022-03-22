@@ -113,7 +113,7 @@ class ApiSync:
             callback_message = None
 
             params_method, response_id, service_callback, method, method_callback = self.check_params_amqp(data)
-# 158.46.250.192:8966
+            # 158.46.250.192:8966
             try:
                 callback_message = self.methods_service[data['method']](*self.check_params_amqp(data))
             except KeyError as e:
@@ -251,3 +251,29 @@ class ApiSync:
         connection.close()
 
         return message['id']
+
+    def send_callback(self, service_name: str, message: dict, response_id: str, result: bool, method_callback: str):
+        """
+        Отправка колбека через кролика. Используется в случае отправки
+        колбека через другое соединение
+        (например из другого потока)
+        :param method_callback: колбек для обработки метода
+        :param result: результат
+        :param response_id: id сообщения на который делается колбек.
+        :param service_name: Название сервиса на который делается колбек.
+        :param message: сообщение
+        :return:
+        """
+        queue_callback = self.schema[service_name]['AMQP']['config']['quenue']
+        exchange_callback = self.schema[service_name]['AMQP']['config']['exchange']
+        callback_message = create_callback_message_amqp(message=message, result=result, service_name=service_name,
+                                                        callback_method_name=method_callback, response_id=response_id)
+
+        connection = self._open_amqp_connection_current_service()
+        channel = connection.channel()
+        channel.basic_publish(exchange=queue_callback,
+                              routing_key=get_route_key(exchange_callback),
+                              body=callback_message.encode('utf-8'))
+
+        channel.close()
+        connection.close()
