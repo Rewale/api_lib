@@ -104,7 +104,7 @@ class ApiSync:
                           service_from_name=service_callback, method_name=data['method'])
             except (ServiceMethodNotAllowed, AllServiceMethodsNotAllowed):
                 error_message = {'error': f"Метод {data['method']} не доступен из сервиса {service_callback}"}
-                ch.basic_publish(exchange=self.exchange,
+                ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
@@ -118,13 +118,13 @@ class ApiSync:
                 callback_message = self.methods_service[data['method']](*self.check_params_amqp(data))
             except KeyError as e:
                 error_message = {'error': f"Метод {data['method']} не поддерживается"}
-                ch.basic_publish(exchange=self.exchange,
+                ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
             except Exception as e:
                 error_message = {'error': f"Ошибка {str(e)}"}
-                ch.basic_publish(exchange=self.exchange,
+                ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
@@ -132,7 +132,7 @@ class ApiSync:
                 ch.basic_ack(delivery_tag=method_request.delivery_tag)
             except Exception as e:
                 print(e)
-            ch.basic_publish(exchange=self.exchange,
+            ch.basic_publish(exchange=config_service['exchange'],
                              routing_key=get_route_key(config_service['quenue']),
                              body=serialize_message(callback_message).encode('utf-8'))
 
