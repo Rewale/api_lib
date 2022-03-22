@@ -10,7 +10,7 @@ from requests.auth import HTTPBasicAuth
 from utils.custom_exceptions import (ServiceNotFound)
 from utils.rabbit_utils import *
 from utils.validation_utils import find_method, check_method_available, InputParam, MethodApi, ConfigAMQP, \
-    check_rls, ConfigHTTP, create_callback_message_amqp, serialize_message
+    check_rls, ConfigHTTP, create_callback_message_amqp, serialize_message, create_hash
 
 
 class NotFoundParams(Exception):
@@ -83,7 +83,7 @@ class ApiSync:
             Начать слушать очередь сообщений сервиса
         """
 
-        def on_request(ch, method, props, body):
+        def on_request(ch, method_request, props, body):
             queue_callback = None
             # Подтверждаем получение
             try:
@@ -112,8 +112,10 @@ class ApiSync:
             # Вызов функции для обработки метода
             callback_message = None
 
+            params_method, response_id, service_callback, method, method_callback = self.check_params_amqp(data)
+# 158.46.250.192:8966
             try:
-                callback_message = self.methods_service[data['method']](params_method)
+                callback_message = self.methods_service[data['method']](*self.check_params_amqp(data))
             except KeyError as e:
                 error_message = {'error': f"Метод {data['method']} не поддерживается"}
                 ch.basic_publish(exchange=self.exchange,
@@ -126,20 +128,13 @@ class ApiSync:
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
-
             try:
-                assert 'id' in callback_message.keys() \
-                       and 'service_callback' in callback_message.keys() \
-                       and 'method' in callback_message.keys() \
-                       and 'method_callback' in callback_message.keys()
-            except AssertionError:
-                KeyError('У ответного сообщения должены быть ключи id, service_callback, method, method_callback')
-
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+            except Exception as e:
+                print(e)
             ch.basic_publish(exchange=self.exchange,
                              routing_key=get_route_key(config_service['quenue']),
-                             body=callback_message)
+                             body=serialize_message(callback_message).encode('utf-8'))
 
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()
@@ -166,7 +161,7 @@ class ApiSync:
 
         method.check_params(InputParam.from_dict(params_method))
 
-        return params
+        return params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
 
     def send_request_api(self, method_name: str,
                          params: Union[InputParam, List[InputParam]], requested_service: str):
