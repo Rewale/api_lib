@@ -8,15 +8,16 @@ from utils.custom_exceptions import *
 
 from sync_api import ApiSync
 from tests.test_data import test_schema_rpc
-from utils.validation_utils import InputParam
+from utils.validation_utils import InputParam, create_callback_message_amqp, convert_date_into_iso
 
 answer = ''
 
 
-def method(params):
+def method(params: dict, response_id: str, service_callback: str, method: str, method_callback: str):
     global answer
     answer = params
-    return str(datetime.datetime.now()) + str(params)
+    params['CreateDate'] = convert_date_into_iso(datetime.datetime.now())
+    return create_callback_message_amqp(params, True, response_id)
 
 
 class TestAMQPSyncApi(unittest.TestCase):
@@ -60,9 +61,9 @@ class TestAMQPSyncApi(unittest.TestCase):
 
         sleep(0.01)
 
-        # Проверяем что сообщение было проверено серверов
+        # Проверяем что сообщение было проверено библиотекой
         # и попало в пользовательский обработчик
-        self.assertTrue(answer != '')
+        self.assertTrue(answer['date'] == '2002-12-12T05:55:33±05:00')
         # TODO: чтение очереди колбеков
 
     def test_send_message_http(self):
@@ -74,7 +75,7 @@ class TestAMQPSyncApi(unittest.TestCase):
         assert api.send_request_api(method_name='getApiStruct',
                                     requested_service='API',
                                     params=[InputParam(name='format', value='json')])['API']
-        
+
     def test_send_message_http_rls_fail(self):
         api = ApiSync(service_name='BDVPROGR',
                       user_api='user',
