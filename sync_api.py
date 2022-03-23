@@ -33,6 +33,12 @@ class ApiSync:
             url: адрес для схемы
             service_name: Название текущего сервиса
             methods: Словарь обработчиков для каждого метода сервиса
+        название_метода: метод(params: dict,
+        response_id: str,
+        service_callback: str,
+        method: str,
+        method_callback: str)
+        -> (dict, bool):
         """
         self.service_name = service_name
 
@@ -79,8 +85,10 @@ class ApiSync:
 
     def listen_queue(self):
         """
-            БЛОКИРУЮЩАЯ ФУНКЦИЯ
-            Начать слушать очередь сообщений сервиса
+            БЛОКИРУЮЩАЯ ФУНКЦИЯ.
+            Слушает очередь сообщений сервиса.
+            Валидирует входящее и исходящее сообщение.
+            Обработка методов в соответствии с обработчиками конструктора.
         """
 
         def on_request(ch, method_request, props, body):
@@ -89,12 +97,6 @@ class ApiSync:
             try:
                 data = json.loads(body.decode('utf-8'))
             except Exception as e:
-                return
-
-            try:
-                params_method = self.check_params_amqp(data)
-
-            except AssertionError:
                 return
 
             service_callback = data['service_callback']
@@ -106,6 +108,8 @@ class ApiSync:
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+                return
 
             try:
                 check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
@@ -116,11 +120,24 @@ class ApiSync:
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+                return
 
             # Вызов функции для обработки метода
             callback_message = None
 
-            params_method, response_id, service_callback, method, method_callback = self.check_params_amqp(data)
+            try:
+                params_method, response_id, service_callback, method, method_callback = self.check_params_amqp(data)
+            except Exception as e:
+                if 'id' in data:
+                    error_message = {'error': f"Ошибка валидации {e}"}
+                    ch.basic_publish(exchange=config_service['exchange'],
+                                     routing_key=get_route_key(config_service['quenue']),
+                                     body=create_callback_message_amqp(message=error_message,
+                                                                       result=False, response_id=data['id']))
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+                return
+
             # 158.46.250.192:8966
             try:
                 callback_message = self.methods_service[data['method']](*self.check_params_amqp(data))
@@ -130,12 +147,16 @@ class ApiSync:
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+                return
             except Exception as e:
                 error_message = {'error': f"Ошибка {str(e)}"}
                 ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
                                                                    result=False, response_id=data['id']))
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
+                return
 
             ch.basic_ack(delivery_tag=method_request.delivery_tag)
             if callback_message is None or not isinstance(callback_message, list):
@@ -158,12 +179,13 @@ class ApiSync:
     def check_params_amqp(self, params: dict):
         # TODO: вынести отдельно
         """ Проверка входящих/исходящих параметров """
-        # Проверка наличия id, response_id, method, method_callback
-        assert 'id' in params.keys() \
-               and 'service_callback' in params.keys() \
-               and 'method' in params.keys() \
-               and 'method_callback' in params.keys()
-
+        try:
+            assert 'id' in params.keys() \
+                   and 'service_callback' in params.keys() \
+                   and 'method' in params.keys() \
+                   and 'method_callback' in params.keys()
+        except AssertionError:
+            raise ValueError('Сообщение обязательно должно содержать id, response_id, method, method_callback')
         schema_service = self.schema[self.service_name]
         method = find_method(params['method'], schema_service)
         params_method = copy.copy(params)
@@ -265,11 +287,11 @@ class ApiSync:
 
         return message['id']
 
-    def send_callback(self, service_name: str, message: dict, response_id: str, result: bool, method_callback: str):
+    def send_callback(self, service_name: str, message: dict, response_id: str, result: bool,
+                      method_callback: str, channel=None):
         """
-        Отправка колбека через кролика. Используется в случае отправки
-        колбека через другое соединение
-        (например из другого потока)
+        Отправка колбека через кролика.
+        :param channel: открытое соединение с кроликов. Если не указан будет создано временное
         :param method_callback: колбек для обработки метода
         :param result: результат
         :param response_id: id сообщения на который делается колбек.
@@ -277,16 +299,16 @@ class ApiSync:
         :param message: сообщение
         :return:
         """
-        queue_callback = self.schema[service_name]['AMQP']['config']['quenue']
-        exchange_callback = self.schema[service_name]['AMQP']['config']['exchange']
+        queue_callback = get_queue_service(service_name, self.schema)
+        exchange_callback = get_exchange_service(service_name, self.schema)
         callback_message = create_callback_message_amqp(message=message, result=result, service_name=service_name,
                                                         callback_method_name=method_callback, response_id=response_id)
 
-        connection = self._open_amqp_connection_current_service()
-        channel = connection.channel()
+        if not channel:
+            connection = self._open_amqp_connection_current_service()
+            channel = connection.channel()
+            channel.close()
+            connection.close()
         channel.basic_publish(exchange=queue_callback,
                               routing_key=get_route_key(exchange_callback),
                               body=callback_message.encode('utf-8'))
-
-        channel.close()
-        connection.close()

@@ -38,35 +38,54 @@ def json_to_response(json_response: dict, response_id: int, result: bool, method
     return json.dumps(correct_json, ensure_ascii=False, default=str)
 
 
+def check_schema_decorator(func):
+    def wrapped(service_name: str, schema: dict):
+        try:
+            return func(service_name, schema)
+        except:
+            if service_name not in schema:
+                raise Exception(f'{service_name} не существует в схеме АПИ!')
+            else:
+                raise Exception(f'{service_name} не поддерживает работу по AMQP')
+
+
 # Для упрощения работы со схемой апи
+@check_schema_decorator
 def get_queue_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['quenue']
 
 
+@check_schema_decorator
 def get_amqp_address_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['address']
 
 
+@check_schema_decorator
 def get_virtualhost_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['virtualhost']
 
 
+@check_schema_decorator
 def get_exchange_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['exchange']
 
 
+@check_schema_decorator
 def get_amqp_username_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['username']
 
 
+@check_schema_decorator
 def get_amqp_password_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['password']
 
 
+@check_schema_decorator
 def get_port_amqp_service(service_name: str, schema: dict):
     return schema[service_name]['AMQP']['config']['port']
 
 
+@check_schema_decorator
 def get_method_service(service_name: str, method_name: str, schema: dict):
     return schema[service_name]['AMQP']['methods']['write'][method_name]
 
@@ -78,4 +97,3 @@ def check_methods_handlers(service_schema: dict, methods: dict):
                 raise MethodsNotSet()
             if name_method not in methods:
                 raise MethodNotSet(name_method)
-
