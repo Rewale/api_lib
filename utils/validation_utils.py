@@ -8,7 +8,7 @@ import uuid
 from typing import Union, List
 from .rabbit_utils import *
 
-from utils.custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
+from .custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
     ParamValidateFail
 
 

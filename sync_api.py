@@ -7,9 +7,9 @@ import pika
 import requests
 from requests.auth import HTTPBasicAuth
 
-from utils.custom_exceptions import (ServiceNotFound, ServiceMethodNotAllowed, AllServiceMethodsNotAllowed)
-from utils.rabbit_utils import *
-from utils.validation_utils import find_method, check_method_available, InputParam, MethodApi, ConfigAMQP, \
+from .utils.custom_exceptions import (ServiceNotFound, ServiceMethodNotAllowed, AllServiceMethodsNotAllowed)
+from .utils.rabbit_utils import *
+from .utils.validation_utils import find_method, check_method_available, InputParam, MethodApi, ConfigAMQP, \
     check_rls, ConfigHTTP, create_callback_message_amqp, serialize_message, create_hash
 
 
@@ -98,7 +98,15 @@ class ApiSync:
                 return
 
             service_callback = data['service_callback']
-            config_service = self.schema[service_callback]['AMQP']['config']
+            try:
+                config_service = self.schema[service_callback]['AMQP']['config']
+            except:
+                error_message = {'error': f"Сервис {service_callback} не описан в схеме АПИ"}
+                ch.basic_publish(exchange=config_service['exchange'],
+                                 routing_key=get_route_key(config_service['quenue']),
+                                 body=create_callback_message_amqp(message=error_message,
+                                                                   result=False, response_id=data['id']))
+
             try:
                 check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
                           service_from_name=service_callback, method_name=data['method'])
@@ -130,11 +138,16 @@ class ApiSync:
                                                                    result=False, response_id=data['id']))
 
             ch.basic_ack(delivery_tag=method_request.delivery_tag)
-            callback_message = create_callback_message_amqp(callback_message, True, response_id, service_callback,
-                                                            method_callback)
+            if callback_message is None or not isinstance(callback_message, list):
+                return
+
+            json_callback = create_callback_message_amqp(callback_message[0], callback_message[1], response_id,
+                                                         service_callback,
+                                                         method_callback)
+
             ch.basic_publish(exchange=config_service['exchange'],
                              routing_key=get_route_key(config_service['quenue']),
-                             body=callback_message.encode('utf-8'))
+                             body=json_callback.encode('utf-8'))
 
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()

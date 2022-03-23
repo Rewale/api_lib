@@ -1,7 +1,7 @@
 """ Модуль утилит для работы с кроликом """
 import hashlib
 import json
-from utils.custom_exceptions import *
+from .custom_exceptions import *
 
 
 def get_route_key(queue_name: str):
