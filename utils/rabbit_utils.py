@@ -1,7 +1,9 @@
 """ Модуль утилит для работы с кроликом """
+import copy
 import hashlib
 import json
 from .custom_exceptions import *
+from .validation_utils import find_method, InputParam
 
 
 def get_route_key(queue_name: str):
@@ -32,6 +34,7 @@ def check_params_amqp(schema_service: dict, params: dict):
 
 def service_amqp_url(service_schema: dict):
     """ AQMP url из описания сервиса """
+    service_schema = service_schema['AMQP']
     login = service_schema['config']['username']
     password = service_schema['config']['password']
     address = service_schema['config']['address']

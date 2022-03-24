@@ -124,6 +124,10 @@ class ApiSync:
             # Вызов функции для обработки метода
             callback_message = None
             try:
+                params_method, response_id, service_callback, method, method_callback = check_params_amqp(
+                    self.schema[self.service_name],
+                    data
+                )
                 callback_message = self.methods_service[data['method']](*check_params_amqp(
                     self.schema[self.service_name],
                     data))
@@ -185,8 +189,6 @@ class ApiSync:
             raise ServiceNotFound
         method = find_method(method_name, self.schema[requested_service])
         check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
-        # TODO: RLS
-        # check_method_available(method, self.schema[self.service_name], requested_service)
 
         if method.type_conn == 'HTTP':
             return json.loads(self.make_request_api_http(method, params))
