@@ -20,6 +20,8 @@ class NotFoundParams(Exception):
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
 
+    # TODO: добавить логгирования, пользовательский логгер
+
     def __init__(self, service_name: str,
                  user_api,
                  pass_api,
@@ -32,13 +34,13 @@ class ApiSync:
             pass_api: пароль для получения схемы
             url: адрес для схемы
             service_name: Название текущего сервиса
-            methods: Словарь обработчиков для каждого метода сервиса
-        название_метода: метод(params: dict,
+            methods: Словарь обработчиков для каждого метода сервиса {название метода: функция}
+        функция(params: dict,
         response_id: str,
         service_callback: str,
         method: str,
         method_callback: str)
-        -> (dict, bool):
+        -> (сообщение: dict, результат: bool):
         """
         self.service_name = service_name
 
@@ -93,24 +95,20 @@ class ApiSync:
 
         def on_request(ch, method_request, props, body):
             queue_callback = None
-            # Подтверждаем получение
+            # Проверка серилизации
             try:
                 data = json.loads(body.decode('utf-8'))
             except Exception as e:
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
-
+            # Проверка наличия такого сервиса в схеме АПИ
             service_callback = data['service_callback']
             try:
                 config_service = self.schema[service_callback]['AMQP']['config']
             except:
-                error_message = {'error': f"Сервис {service_callback} не описан в схеме АПИ"}
-                ch.basic_publish(exchange=config_service['exchange'],
-                                 routing_key=get_route_key(config_service['quenue']),
-                                 body=create_callback_message_amqp(message=error_message,
-                                                                   result=False, response_id=data['id']))
                 ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
-
+            # Проверка доступности метода
             try:
                 check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
                           service_from_name=service_callback, method_name=data['method'])
@@ -125,22 +123,10 @@ class ApiSync:
 
             # Вызов функции для обработки метода
             callback_message = None
-
             try:
-                params_method, response_id, service_callback, method, method_callback = self.check_params_amqp(data)
-            except Exception as e:
-                if 'id' in data:
-                    error_message = {'error': f"Ошибка валидации {e}"}
-                    ch.basic_publish(exchange=config_service['exchange'],
-                                     routing_key=get_route_key(config_service['quenue']),
-                                     body=create_callback_message_amqp(message=error_message,
-                                                                       result=False, response_id=data['id']))
-                ch.basic_ack(delivery_tag=method_request.delivery_tag)
-                return
-
-            # 158.46.250.192:8966
-            try:
-                callback_message = self.methods_service[data['method']](*self.check_params_amqp(data))
+                callback_message = self.methods_service[data['method']](*check_params_amqp(
+                    self.schema[self.service_name],
+                    data))
             except KeyError as e:
                 error_message = {'error': f"Метод {data['method']} не поддерживается"}
                 ch.basic_publish(exchange=config_service['exchange'],
@@ -159,12 +145,14 @@ class ApiSync:
                 return
 
             ch.basic_ack(delivery_tag=method_request.delivery_tag)
-            if callback_message is None or not isinstance(callback_message, list):
+            if callback_message is None:
                 return
-
-            json_callback = create_callback_message_amqp(callback_message[0], callback_message[1], response_id,
-                                                         service_callback,
-                                                         method_callback)
+            try:
+                json_callback = create_callback_message_amqp(callback_message[0], callback_message[1], response_id,
+                                                             service_callback,
+                                                             method_callback)
+            except TypeError:
+                raise TypeError('Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
 
             ch.basic_publish(exchange=config_service['exchange'],
                              routing_key=get_route_key(config_service['quenue']),
@@ -175,28 +163,6 @@ class ApiSync:
 
         channel.basic_consume(on_message_callback=on_request, queue=self.queue)
         channel.start_consuming()
-
-    def check_params_amqp(self, params: dict):
-        # TODO: вынести отдельно
-        """ Проверка входящих/исходящих параметров """
-        try:
-            assert 'id' in params.keys() \
-                   and 'service_callback' in params.keys() \
-                   and 'method' in params.keys() \
-                   and 'method_callback' in params.keys()
-        except AssertionError:
-            raise ValueError('Сообщение обязательно должно содержать id, response_id, method, method_callback')
-        schema_service = self.schema[self.service_name]
-        method = find_method(params['method'], schema_service)
-        params_method = copy.copy(params)
-        del params_method['id']
-        del params_method['service_callback']
-        del params_method['method']
-        del params_method['method_callback']
-
-        method.check_params(InputParam.from_dict(params_method))
-
-        return params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
 
     def send_request_api(self, method_name: str,
                          params: Union[InputParam, List[InputParam]], requested_service: str):
@@ -240,17 +206,17 @@ class ApiSync:
         Returns:
             str: Ответ сервиса.
         """
-        url = method.get_url()
+        url = method.get_url_http()
         message = method.get_message_http(params)
-        # headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
         auth = None
         if method.config.auth:
             auth = (method.config.username, method.config.password)
 
         if method.config.type == 'POST':
-            return requests.post(url, data=message, auth=auth).text
+            return requests.post(url, headers=headers, data=message, auth=auth).text
         if method.config.type == 'GET':
-            return requests.get(url, data=message, auth=auth).text
+            return requests.get(url, data=message, headers=headers, auth=auth).text
 
     def _open_amqp_connection_current_service(self):
         connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -272,7 +238,6 @@ class ApiSync:
         Returns:
             str: id отправленного сообщения
         """
-        # TODO: добавить проверку РЛС
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()
 
@@ -307,8 +272,12 @@ class ApiSync:
         if not channel:
             connection = self._open_amqp_connection_current_service()
             channel = connection.channel()
+            channel.basic_publish(exchange=exchange_callback,
+                                  routing_key=get_route_key(queue_callback),
+                                  body=callback_message.encode('utf-8'))
             channel.close()
             connection.close()
-        channel.basic_publish(exchange=queue_callback,
-                              routing_key=get_route_key(exchange_callback),
-                              body=callback_message.encode('utf-8'))
+        else:
+            channel.basic_publish(exchange=exchange_callback,
+                                  routing_key=get_route_key(queue_callback),
+                                  body=callback_message.encode('utf-8'))

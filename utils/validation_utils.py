@@ -192,8 +192,7 @@ class MethodApi(object):
 
         return True
 
-    def get_url(self):
-        # TODO: сделать для amqp
+    def get_url_http(self):
         return self.config.get_url(self.name)
 
     def get_message_http(self, params: List[InputParam]) -> Union[str, dict]:

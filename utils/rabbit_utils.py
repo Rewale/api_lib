@@ -9,13 +9,34 @@ def get_route_key(queue_name: str):
     return f'#{queue_name}#'
 
 
-def service_amqp_url(service_name: dict):
+def check_params_amqp(schema_service: dict, params: dict):
+    """ Проверка входящих/исходящих параметров """
+    try:
+        assert 'id' in params.keys() \
+               and 'service_callback' in params.keys() \
+               and 'method' in params.keys() \
+               and 'method_callback' in params.keys()
+    except AssertionError:
+        raise ValueError('Сообщение обязательно должно содержать id, response_id, method, method_callback')
+    method = find_method(params['method'], schema_service)
+    params_method = copy.copy(params)
+    del params_method['id']
+    del params_method['service_callback']
+    del params_method['method']
+    del params_method['method_callback']
+
+    method.check_params(InputParam.from_dict(params_method))
+
+    return params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
+
+
+def service_amqp_url(service_schema: dict):
     """ AQMP url из описания сервиса """
-    login = service_name['config']['username']
-    password = service_name['config']['password']
-    address = service_name['config']['address']
-    port = 5672 if service_name['config']['port'] == '' else service_name['config']['port']
-    vhost = service_name['config']['virtualhost']
+    login = service_schema['config']['username']
+    password = service_schema['config']['password']
+    address = service_schema['config']['address']
+    port = 5672 if service_schema['config']['port'] == '' else service_schema['config']['port']
+    vhost = service_schema['config']['virtualhost']
     amqp = f'amqp://{login}:{password}@{address}:{port}/{vhost}'
     return amqp
 
@@ -47,6 +68,8 @@ def check_schema_decorator(func):
                 raise Exception(f'{service_name} не существует в схеме АПИ!')
             else:
                 raise Exception(f'{service_name} не поддерживает работу по AMQP')
+
+    return wrapped
 
 
 # Для упрощения работы со схемой апи

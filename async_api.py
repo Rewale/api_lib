@@ -14,9 +14,14 @@ import redis_read_worker
 from utils.custom_exceptions import (ServiceNotFound)
 from sync_api import ApiSync
 from utils.rabbit_utils import get_route_key, service_amqp_url
-from utils.validation_utils import check_method_available, check_params, find_method
+from utils.validation_utils import check_method_available, find_method
 
 
+# TODO: вынести проверки
+# TODO: отправка сообщения через http и кролика с проверками
+# TODO: обработка колбеков как в 1с (редис=регистр)
+# TODO: разобраться с колбеком о непройденной валидации данных!
+# TODO: вынести все проверки в общий модуль
 class ApiAsync(object):
     url = ApiSync.url
     connection: aio_pika.Connection = None
@@ -90,7 +95,7 @@ class ApiAsync(object):
 
     async def get_schema(self) -> dict:
         """ Асинхронное получение схемы """
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(aiohttp.BasicAuth(self.use)) as session:
             async with session.post(self.url, data={'format': 'json'}) as response:
                 text_json = await response.text()
         content_json = json.loads(text_json)
