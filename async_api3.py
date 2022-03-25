@@ -15,6 +15,7 @@ class ApiAsync(object):
     @classmethod
     async def create_api_async(cls, user_api, pass_api, service_name: str,
                                methods: dict = None,
+                               methods_callback: dict = None,
                                url='http://apidev.mezex.lan/getApiStructProgr',
                                redis_url: str = "redis://localhost",
                                schema: dict = None):
@@ -34,8 +35,14 @@ class ApiAsync(object):
         method: str,
         method_callback: str)
         -> (сообщение: dict, результат: bool):
+        :param pass_api:
+        :param methods:
+        :param schema:
+        :param url:
+        :param redis_url:
+        :param methods_callback:
          """
-        self = ApiAsync(service_name, user_api, pass_api, redis_url, methods, url, schema)
+        self = ApiAsync(service_name, user_api, pass_api, redis_url, methods, url, schema, methods_callback)
         # Для тестов можно загружать словарь
         self.schema = None
         if schema is not None:
@@ -51,7 +58,8 @@ class ApiAsync(object):
                  redis_url: str,
                  methods: dict = None,
                  url='http://apidev.mezex.lan/getApiStructProgr',
-                 schema: dict = None):
+                 schema: dict = None,
+                 methods_callback = None):
         r"""
         НИЗЯ!
         Args:
@@ -110,88 +118,23 @@ class ApiAsync(object):
             async for message in queue_iter:
                 message: aio_pika.IncomingMessage
                 async with message.process():
-                    queue_callback = None
+                    # TODO: обработка колбеков
                     # Проверка серилизации
                     try:
                         data = json.loads(message.body.decode('utf-8'))
                     except Exception as e:
-                        continue
+                        return
+                    if 'response_id' in data:
+                        try:
+                            await self.process_callback_message(data, channel)
+                        except Exception as e:
+                            pass
+                    else:
+                        try:
+                            await self.process_incoming_message(data, channel)
+                        except:
+                            pass
 
-                    # Проверка наличия такого сервиса в схеме АПИ
-                    service_callback = data['service_callback']
-                    try:
-                        config_service = self.schema[service_callback]['AMQP']['config']
-                        exchange_name = config_service['exchange']
-                        exchange = await channel.get_exchange(exchange_name)
-                    except:
-                        continue
-                    # Проверка доступности метода
-                    try:
-                        check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
-                                  service_from_name=service_callback, method_name=data['method'])
-                    except (ServiceMethodNotAllowed, AllServiceMethodsNotAllowed):
-                        error_message = {'error': f"Метод {data['method']} не доступен из сервиса {service_callback}"}
-                        # ch.basic_publish(exchange=config_service['exchange'],
-                        #                  routing_key=get_route_key(config_service['quenue']),
-                        #                  body=create_callback_message_amqp(message=error_message,
-                        #                                                    result=False, response_id=data['id']))
-                        # ch.basic_ack(delivery_tag=method_request.delivery_tag)
-                        body_message = create_callback_message_amqp(error_message, False, data['id'],
-                                                                    service_name=self.service_name).encode('utf-8')
-                        out_message = aio_pika.Message(body_message)
-                        await exchange.publish(
-                            out_message,
-                            routing_key=config_service['quenue']
-                        )
-                        continue
-
-                    # Вызов функции для обработки метода
-                    callback_message = None
-                    try:
-                        params_method, response_id, service_callback, method, method_callback = check_params_amqp(
-                            self.schema[self.service_name],
-                            data
-                        )
-                        callback_message = self.methods_service[data['method']](*check_params_amqp(
-                            self.schema[self.service_name],
-                            data))
-                    except KeyError as e:
-                        error_message = {'error': f"Метод {data['method']} не поддерживается"}
-                        body_message = create_callback_message_amqp(error_message, False, data['id'],
-                                                                    service_name=self.service_name).encode('utf-8')
-                        out_message = aio_pika.Message(body_message)
-                        await exchange.publish(
-                            out_message,
-                            routing_key=config_service['quenue']
-                        )
-                        continue
-                    except Exception as e:
-                        error_message = {'error': f"Ошибка {str(e)}"}
-                        body_message = create_callback_message_amqp(error_message, False, data['id'],
-                                                                    service_name=self.service_name).encode('utf-8')
-                        out_message = aio_pika.Message(body_message)
-                        await exchange.publish(
-                            out_message,
-                            routing_key=config_service['quenue']
-                        )
-                        continue
-
-                    if callback_message is None:
-                        continue
-                    try:
-                        json_callback = create_callback_message_amqp(callback_message[0], callback_message[1],
-                                                                     response_id,
-                                                                     service_callback,
-                                                                     method_callback)
-                    except TypeError:
-                        raise TypeError(
-                            'Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
-
-                    out_message = aio_pika.Message(json_callback.encode('utf-8'))
-                    await exchange.publish(
-                        out_message,
-                        routing_key=get_route_key(config_service['quenue'])
-                    )
 
     async def api_http_request(self, method: MethodApi, params: List[InputParam]):
         url = method.get_url_http()
@@ -262,3 +205,85 @@ class ApiAsync(object):
 
         if method.type_conn == 'AMQP':
             return await self.api_amqp_request(method, params)
+
+    async def process_incoming_message(self, data: dict, channel):
+        queue_callback = None
+
+        # Проверка наличия такого сервиса в схеме АПИ
+        service_callback = data['service_callback']
+        try:
+            config_service = self.schema[service_callback]['AMQP']['config']
+            exchange_name = config_service['exchange']
+            exchange = await channel.get_exchange(exchange_name)
+        except:
+            return
+        # Проверка доступности метода
+        try:
+            check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
+                      service_from_name=service_callback, method_name=data['method'])
+        except (ServiceMethodNotAllowed, AllServiceMethodsNotAllowed):
+            error_message = {'error': f"Метод {data['method']} не доступен из сервиса {service_callback}"}
+            # ch.basic_publish(exchange=config_service['exchange'],
+            #                  routing_key=get_route_key(config_service['quenue']),
+            #                  body=create_callback_message_amqp(message=error_message,
+            #                                                    result=False, response_id=data['id']))
+            # ch.basic_ack(delivery_tag=method_request.delivery_tag)
+            body_message = create_callback_message_amqp(error_message, False, data['id'],
+                                                        service_name=self.service_name).encode('utf-8')
+            out_message = aio_pika.Message(body_message)
+            await exchange.publish(
+                out_message,
+                routing_key=config_service['quenue']
+            )
+            return
+
+        # Вызов функции для обработки метода
+        callback_message = None
+        try:
+            params_method, response_id, service_callback, method, method_callback = check_params_amqp(
+                self.schema[self.service_name],
+                data
+            )
+            callback_message = self.methods_service[data['method']](*check_params_amqp(
+                self.schema[self.service_name],
+                data))
+        except KeyError as e:
+            error_message = {'error': f"Метод {data['method']} не поддерживается"}
+            body_message = create_callback_message_amqp(error_message, False, data['id']).encode('utf-8')
+            out_message = aio_pika.Message(body_message)
+            await exchange.publish(
+                out_message,
+                routing_key=config_service['quenue']
+            )
+            return
+        except Exception as e:
+            error_message = {'error': f"Ошибка {str(e)}"}
+            body_message = create_callback_message_amqp(error_message, False, data['id']).encode('utf-8')
+            out_message = aio_pika.Message(body_message)
+            await exchange.publish(
+                out_message,
+                routing_key=config_service['quenue']
+            )
+            return
+
+        if callback_message is None:
+            return
+        try:
+            json_callback = create_callback_message_amqp(callback_message[0], callback_message[1],
+                                                         response_id,
+                                                         service_callback,
+                                                         method_callback)
+        except TypeError:
+            raise TypeError(
+                'Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
+
+        out_message = aio_pika.Message(json_callback.encode('utf-8'))
+        await exchange.publish(
+            out_message,
+            routing_key=get_route_key(config_service['quenue'])
+        )
+
+    async def process_callback_message(self, message, channel):
+        callback_message = CallbackMessage.from_dict(message.body)
+        # self.me callback_message.method
+

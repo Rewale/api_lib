@@ -226,9 +226,10 @@ def create_callback_message_amqp(message: dict,
                                  result: bool,
                                  response_id: str,
                                  service_name: str = None,
-                                 callback_method_name: str = None) -> str:
+                                 method_name: str = None) -> str:
     """
     Получить отформатирванное сообщения с hash id для колбека
+    :param method_name: Имя метода который отправляет колбек
     :param message: Сообщение в виде словаря из хендлера.
     :param result: Успешность выполнения.
     :param service_name: Название сервиса.
@@ -238,8 +239,8 @@ def create_callback_message_amqp(message: dict,
     """
     correct_json = {
         'response_id': response_id,
-        'method': callback_method_name,
         'service_callback': service_name,
+        'method': method_name,
         'message': {
             'result': result,
             'response': message

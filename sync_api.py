@@ -117,7 +117,8 @@ class ApiSync:
                 ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
-                                                                   result=False, response_id=data['id']))
+                                                                   result=False, response_id=data['id'],
+                                                                   method_name=data['method']))
                 ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
 
@@ -136,7 +137,8 @@ class ApiSync:
                 ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
-                                                                   result=False, response_id=data['id']))
+                                                                   result=False, response_id=data['id'],
+                                                                   method_name=data['method']))
                 ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
             except Exception as e:
@@ -144,7 +146,8 @@ class ApiSync:
                 ch.basic_publish(exchange=config_service['exchange'],
                                  routing_key=get_route_key(config_service['quenue']),
                                  body=create_callback_message_amqp(message=error_message,
-                                                                   result=False, response_id=data['id']))
+                                                                   result=False, response_id=data['id'],
+                                                                   method_name=data['method']))
                 ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
 
@@ -152,9 +155,10 @@ class ApiSync:
             if callback_message is None:
                 return
             try:
-                json_callback = create_callback_message_amqp(callback_message[0], callback_message[1], response_id,
-                                                             service_callback,
-                                                             method_callback)
+                json_callback = create_callback_message_amqp(message=callback_message[0],
+                                                             result=callback_message[1],
+                                                             response_id=response_id)
+
             except TypeError:
                 raise TypeError('Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
 

@@ -123,3 +123,24 @@ def check_methods_handlers(service_schema: dict, methods: dict):
                 raise MethodsNotSet()
             if name_method not in methods:
                 raise MethodNotSet(name_method)
+
+
+class CallbackMessage:
+    def __init__(self, id: str, method: str, service_callback: str, response_id: str, result: bool, response: str):
+        self.id = id
+        self.method = method
+        self.service_callback = service_callback
+        self.response_id = response_id
+        self.result = result
+        self.response = json.dumps(response)
+
+    @staticmethod
+    def from_dict(message: dict):
+        return CallbackMessage(
+            id=message['id'],
+            method=message['method'],
+            service_callback=message['service_callback'],
+            response_id=message['response_id'],
+            result=message['message']['result'],
+            response=message['message']['response']
+        )
