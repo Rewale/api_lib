@@ -132,7 +132,7 @@ class CallbackMessage:
         self.service_callback = service_callback
         self.response_id = response_id
         self.result = result
-        self.response = json.dumps(response)
+        self.response = json.loads(response)
 
     @staticmethod
     def from_dict(message: dict):

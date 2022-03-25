@@ -3,8 +3,10 @@ import json
 from typing import List, Union, Optional
 
 import aioredis
+import loguru
 from aio_pika import Message
 
+import loggers
 from api_lib.utils.rabbit_utils import *
 import aio_pika
 
@@ -106,7 +108,10 @@ class ApiAsync(object):
 
         # Redis
         self.redis: aioredis.Redis
-        # self.redis_connection(redis_url)
+        self.redis_connection(redis_url)
+
+        # logger
+        self.logger = loguru.logger
 
     def redis_connection(self, redis_url: str):
         self.redis = aioredis.from_url(redis_url)
@@ -126,30 +131,43 @@ class ApiAsync(object):
         queue_name = get_queue_service(self.service_name, self.schema)
         queue: aio_pika.Queue = await channel.get_queue(queue_name)
         async with queue.iterator() as queue_iter:
-            # TODO: добавить обработку коллбеков от других сервисов
             async for message in queue_iter:
                 message: aio_pika.IncomingMessage
                 async with message.process():
                     # Проверка серилизации
                     try:
                         data = json.loads(message.body.decode('utf-8'))
-                        exchange_name_callback = data['exchange']
-                        queue_name_callback = data['quenue']
+                        exchange_name_callback = get_exchange_service(data['service_callback'], self.schema)
+                        queue_name_callback = get_queue_service(data['service_callback'], self.schema)
+                        self.logger.info(f"[SER] Серелизован {data=}")
                     except Exception as e:
-                        return
+                        self.logger.info(f"[SER] Ошибка серилизации {message.body.decode('utf-8')}")
+                        continue
                     if 'response_id' in data:
                         try:
-                            out_message = Message(await self.process_callback_message(data, channel))
-                        except Exception as e:
-                            pass
+                            self.logger.info("[Callback] Начало обработки коллбека")
+                            body = await self.process_callback_message(data, channel)
+                            if body is None:
+                                self.logger.info(f"[Callback] Сообщение отработано без ответа!")
+                                continue
+                            out_message = Message(body.encode('utf-8'))
+                            self.logger.info(f"[Callback] Конец обработки колбека{body=}")
+                        except KeyError as e:
+                            self.logger.error(f"[Callback] не найден метод {e}")
+                            continue
                     else:
                         try:
+                            self.logger.info("[Message] Начало обработки сообщения")
                             out = await self.process_incoming_message(data)
                             out_message = Message(out.encode('utf-8'))
-                        except:
-                            pass
+                            self.logger.info(f"[Message] Конец обработки сообщения{out=}")
+                        except Exception as e:
+                            self.logger.info(f"[Message] {e}")
+                            continue
                     exchange_callback = await channel.get_exchange(exchange_name_callback)
                     await exchange_callback.publish(out_message, routing_key=get_route_key(queue_name_callback))
+
+                    self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
 
     async def api_http_request(self, method: MethodApi, params: List[InputParam]):
         url = method.get_url_http()
@@ -198,7 +216,9 @@ class ApiAsync(object):
         return conn
 
     async def send_request_api(self, method_name: str,
-                               params: List[InputParam], requested_service: str) -> str:
+                               params: List[InputParam],
+                               requested_service: str,
+                               callback_method_name: str = None) -> str:
         r"""
         Отправка запроса на сервис
 
@@ -224,7 +244,7 @@ class ApiAsync(object):
             return await self.api_http_request(method, params)
 
         if method.type_conn == 'AMQP':
-            return await self.api_amqp_request(method, params)
+            return await self.api_amqp_request(method, params, callback_method_name)
 
     async def process_incoming_message(self, data: dict) -> Optional[str]:
         # Проверка наличия такого сервиса в схеме АПИ
@@ -274,13 +294,12 @@ class ApiAsync(object):
 
         return json_callback
 
-    async def process_callback_message(self, message, channel):
-        callback_message = CallbackMessage.from_dict(message.body)
+    async def process_callback_message(self, message: dict, channel):
+        callback_message = CallbackMessage.from_dict(message)
         self.redis: aioredis.Redis
         method_name = await self.redis.get(callback_message.response_id)
+        method_name = method_name.decode('utf-8')
         if not method_name and method_name not in self.methods_callback:
             return
 
-        return self.methods_callback[method_name](callback_message)
-
-
+        return await self.methods_callback[method_name](callback_message)

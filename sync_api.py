@@ -272,8 +272,8 @@ class ApiSync:
         """
         queue_callback = get_queue_service(service_name, self.schema)
         exchange_callback = get_exchange_service(service_name, self.schema)
-        callback_message = create_callback_message_amqp(message=message, result=result, service_name=service_name,
-                                                        callback_method_name=method_callback, response_id=response_id)
+        callback_message = create_callback_message_amqp(message=message, result=result,
+                                                        response_id=response_id)
 
         if not channel:
             connection = self._open_amqp_connection_current_service()

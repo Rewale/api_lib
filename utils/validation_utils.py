@@ -5,7 +5,7 @@ import re
 import datetime
 import json
 import uuid
-from typing import Union, List
+from typing import Union, List, Tuple
 from .rabbit_utils import *
 
 from .custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
