@@ -6,10 +6,10 @@ import datetime
 import json
 import uuid
 from typing import Union, List, Tuple
-from .rabbit_utils import *
+from api_lib.utils.rabbit_utils import create_hash
 
 from .custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
-    ParamValidateFail
+    ParamValidateFail, WrongTypeParam, WrongSizeParam, AllServiceMethodsNotAllowed
 
 
 class Config(abc.ABC):
@@ -220,47 +220,6 @@ class MethodApi(object):
             message['id'] = str(hash_id)
 
             return message
-
-
-def create_callback_message_amqp(message: dict,
-                                 result: bool,
-                                 response_id: str,
-                                 service_name: str = None,
-                                 method_name: str = None) -> str:
-    """
-    Получить отформатирванное сообщения с hash id для колбека
-    :param method_name: Имя метода который отправляет колбек
-    :param message: Сообщение в виде словаря из хендлера.
-    :param result: Успешность выполнения.
-    :param service_name: Название сервиса.
-    :param callback_method_name: Метод колбека для текущего сервиса.
-    :param response_id: ID сообщения на который делается колбек
-    :return: json-строка
-    """
-    correct_json = {
-        'response_id': response_id,
-        'service_callback': service_name,
-        'method': method_name,
-        'message': {
-            'result': result,
-            'response': message
-        }
-    }
-
-    hash_id = create_hash(correct_json)
-    correct_json['id'] = hash_id
-
-    return serialize_message(correct_json)
-
-
-def serialize_message(message: dict) -> str:
-    """ Серилизация сообщения в json"""
-    return json.dumps(message, ensure_ascii=True, default=str)
-
-
-def create_hash(message: dict):
-    """ Хеш-id """
-    return hashlib.md5(serialize_message(message).encode('utf-8')).hexdigest()
 
 
 def find_method(method_name, service_schema: dict):

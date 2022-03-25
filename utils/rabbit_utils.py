@@ -2,7 +2,10 @@
 import copy
 import hashlib
 import json
+from typing import Union
+
 from .custom_exceptions import *
+from .utils_message import create_hash, serialize_message
 from .validation_utils import find_method, InputParam
 
 
@@ -29,7 +32,11 @@ def check_params_amqp(schema_service: dict, params: dict):
 
     method.check_params(InputParam.from_dict(params_method))
 
-    return params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
+    return IncomingMessage(response_id=params['id'],
+                           params=params_method,
+                           method_callback=params['method_callback'],
+                           service_callback=params['service_callback'])
+    # params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
 
 
 def service_amqp_url(service_schema: dict):
@@ -126,13 +133,39 @@ def check_methods_handlers(service_schema: dict, methods: dict):
 
 
 class CallbackMessage:
-    def __init__(self, id: str, method: str, service_callback: str, response_id: str, result: bool, response: str):
+    def __init__(self,
+                 method: str,
+                 service_callback: str,
+                 response_id: str,
+                 result: bool,
+                 response: Union[str, dict],
+                 id:str = None):
         self.id = id
         self.method = method
         self.service_callback = service_callback
         self.response_id = response_id
         self.result = result
-        self.response = json.loads(response)
+        if isinstance(response, str):
+            self.response = json.loads(response)
+        else:
+            self.response = response
+
+    def json(self) -> str:
+        """ Возвращает строку json """
+        correct_json = {
+            'response_id': self.response_id,
+            'service_callback': self.service_callback,
+            'method': self.method,
+            'message': {
+                'result': self.result,
+                'response': self.response
+            }
+        }
+
+        hash_id = create_hash(correct_json)
+        correct_json['id'] = hash_id
+
+        return serialize_message(correct_json)
 
     @staticmethod
     def from_dict(message: dict):
@@ -144,3 +177,67 @@ class CallbackMessage:
             result=message['message']['result'],
             response=message['message']['response']
         )
+
+class IncomingMessage:
+    def __init__(self, response_id: str, service_callback: str, params: dict, method_callback: str):
+        self.params = params
+        self.service_callback = service_callback
+        self.id = response_id
+        self.method_callback = method_callback
+
+    @staticmethod
+    def from_dict(message: dict):
+        params = copy.copy(message)
+        del params['id']
+        del params['method_callback']
+        del params['service_callback']
+        return IncomingMessage(
+            response_id=message['id'],
+            service_callback=message['service_callback'],
+            params=params,
+            method_callback=message['method_callback']
+        )
+
+    def callback_message(self, param: dict, result: bool):
+        """
+
+        :param param: Выходные параметры
+        :param result: результат выполнения
+        :return: сообщение колбека
+        """
+        return CallbackMessage(response_id=self.id,
+                               service_callback=self.service_callback,
+                               method=self.method_callback,
+                               result=result,
+                               response=param)
+
+
+def create_callback_message_amqp(message: dict,
+                                 result: bool,
+                                 response_id: str,
+                                 service_name: str = None,
+                                 method_name: str = None) -> str:
+    """
+    Получить отформатирванное сообщения с hash id для колбека
+    :param method_name: Имя метода который отправляет колбек
+    :param message: Сообщение в виде словаря из хендлера.
+    :param result: Успешность выполнения.
+    :param service_name: Название сервиса.
+    :param callback_method_name: Метод колбека для текущего сервиса.
+    :param response_id: ID сообщения на который делается колбек
+    :return: json-строка
+    """
+    correct_json = {
+        'response_id': response_id,
+        'service_callback': service_name,
+        'method': method_name,
+        'message': {
+            'result': result,
+            'response': message
+        }
+    }
+
+    hash_id = create_hash(correct_json)
+    correct_json['id'] = hash_id
+
+    return serialize_message(correct_json)

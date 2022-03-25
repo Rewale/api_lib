@@ -1,5 +1,6 @@
 import asyncio
 import json
+import traceback
 from typing import List, Union, Optional
 
 import aioredis
@@ -12,8 +13,8 @@ import aio_pika
 
 import aiohttp
 
-from api_lib.utils.validation_utils import MethodApi, InputParam, serialize_message, check_rls, \
-    create_callback_message_amqp, find_method
+from api_lib.utils.validation_utils import MethodApi, InputParam, check_rls, \
+    find_method
 
 
 class ApiAsync(object):
@@ -81,6 +82,8 @@ class ApiAsync(object):
         method_callback: str)
         -> (сообщение: dict, результат: bool):
         """
+        if methods_callback is None:
+            methods_callback = {}
         self.methods_callback = methods_callback
         self.channel = None
         self.connection = None
@@ -139,14 +142,14 @@ class ApiAsync(object):
                         data = json.loads(message.body.decode('utf-8'))
                         exchange_name_callback = get_exchange_service(data['service_callback'], self.schema)
                         queue_name_callback = get_queue_service(data['service_callback'], self.schema)
-                        self.logger.info(f"[SER] Серелизован {data=}")
+                        self.logger.info(f"[SER] Серилизован {data=}")
                     except Exception as e:
                         self.logger.info(f"[SER] Ошибка серилизации {message.body.decode('utf-8')}")
                         continue
                     if 'response_id' in data:
                         try:
                             self.logger.info("[Callback] Начало обработки коллбека")
-                            body = await self.process_callback_message(data, channel)
+                            body = await self.process_callback_message(data)
                             if body is None:
                                 self.logger.info(f"[Callback] Сообщение отработано без ответа!")
                                 continue
@@ -154,6 +157,9 @@ class ApiAsync(object):
                             self.logger.info(f"[Callback] Конец обработки колбека{body=}")
                         except KeyError as e:
                             self.logger.error(f"[Callback] не найден метод {e}")
+                            continue
+                        except TypeError as e:
+                            self.logger.error(f"[Callback] не указаны доступные методы для обработки колбека")
                             continue
                     else:
                         try:
@@ -233,6 +239,10 @@ class ApiAsync(object):
            ParamNotFound - параметр не найден
         Returns:
             При AMQP - id сообщения (его хеш-сумма). При HTTP - текст сообщения
+            :param requested_service:
+            :param params:
+            :param method_name:
+            :param callback_method_name:
         """
 
         if requested_service not in self.schema:
@@ -265,11 +275,7 @@ class ApiAsync(object):
 
         # Вызов функции для обработки метода
         try:
-            params_method, response_id, service_callback, method, method_callback = check_params_amqp(
-                self.schema[self.service_name],
-                data
-            )
-            callback_message = await self.methods_service[data['method']](*check_params_amqp(
+            callback_message = await self.methods_service[data['method']](check_params_amqp(
                 self.schema[self.service_name],
                 data))
         except KeyError as e:
@@ -277,29 +283,23 @@ class ApiAsync(object):
             body_message = create_callback_message_amqp(error_message, False, data['id'])
             return body_message
         except Exception as e:
+            self.logger.error(traceback.format_exc())
             error_message = {'error': f"Ошибка {str(e)}"}
             body_message = create_callback_message_amqp(error_message, False, data['id'])
             return body_message
 
         if callback_message is None:
             return
-        try:
-            json_callback = create_callback_message_amqp(callback_message[0], callback_message[1],
-                                                         response_id,
-                                                         service_callback,
-                                                         method_callback)
-        except TypeError:
-            raise TypeError(
-                'Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
+
+        json_callback = callback_message.json()
 
         return json_callback
 
-    async def process_callback_message(self, message: dict, channel):
+    async def process_callback_message(self, message: dict):
         callback_message = CallbackMessage.from_dict(message)
         self.redis: aioredis.Redis
         method_name = await self.redis.get(callback_message.response_id)
-        method_name = method_name.decode('utf-8')
         if not method_name and method_name not in self.methods_callback:
             return
-
+        method_name = method_name.decode('utf-8')
         return await self.methods_callback[method_name](callback_message)
