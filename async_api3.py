@@ -1,6 +1,9 @@
 import asyncio
 import json
-from typing import List, Union
+from typing import List, Union, Optional
+
+import aioredis
+from aio_pika import Message
 
 from api_lib.utils.rabbit_utils import *
 import aio_pika
@@ -17,7 +20,7 @@ class ApiAsync(object):
                                methods: dict = None,
                                methods_callback: dict = None,
                                url='http://apidev.mezex.lan/getApiStructProgr',
-                               redis_url: str = "redis://localhost",
+                               redis_url: str = 'redis://127.0.0.1:6379',
                                schema: dict = None):
         r"""
          Создание экземпляра класса
@@ -59,7 +62,7 @@ class ApiAsync(object):
                  methods: dict = None,
                  url='http://apidev.mezex.lan/getApiStructProgr',
                  schema: dict = None,
-                 methods_callback = None):
+                 methods_callback=None):
         r"""
         НИЗЯ!
         Args:
@@ -67,6 +70,7 @@ class ApiAsync(object):
             pass_api: пароль для получения схемы
             url: адрес для схемы
             service_name: Название текущего сервиса
+            methods_callback: Словарь обработчиков колбеков {название метода: функция}
             methods: Словарь обработчиков для каждого метода сервиса {название метода: функция}
         функция(params: dict,
         response_id: str,
@@ -75,6 +79,7 @@ class ApiAsync(object):
         method_callback: str)
         -> (сообщение: dict, результат: bool):
         """
+        self.methods_callback = methods_callback
         self.channel = None
         self.connection = None
         self.service_name = service_name
@@ -99,6 +104,13 @@ class ApiAsync(object):
         self.credentials = None
         self.schema = schema
 
+        # Redis
+        self.redis: aioredis.Redis
+        # self.redis_connection(redis_url)
+
+    def redis_connection(self, redis_url: str):
+        self.redis = aioredis.from_url(redis_url)
+
     async def get_schema(self) -> dict:
         """ Асинхронное получение схемы """
         async with aiohttp.ClientSession(auth=aiohttp.BasicAuth(self.user_api, self.pass_api)) as session:
@@ -118,23 +130,26 @@ class ApiAsync(object):
             async for message in queue_iter:
                 message: aio_pika.IncomingMessage
                 async with message.process():
-                    # TODO: обработка колбеков
                     # Проверка серилизации
                     try:
                         data = json.loads(message.body.decode('utf-8'))
+                        exchange_name_callback = data['exchange']
+                        queue_name_callback = data['quenue']
                     except Exception as e:
                         return
                     if 'response_id' in data:
                         try:
-                            await self.process_callback_message(data, channel)
+                            out_message = Message(await self.process_callback_message(data, channel))
                         except Exception as e:
                             pass
                     else:
                         try:
-                            await self.process_incoming_message(data, channel)
+                            out = await self.process_incoming_message(data)
+                            out_message = Message(out.encode('utf-8'))
                         except:
                             pass
-
+                    exchange_callback = await channel.get_exchange(exchange_name_callback)
+                    await exchange_callback.publish(out_message, routing_key=get_route_key(queue_name_callback))
 
     async def api_http_request(self, method: MethodApi, params: List[InputParam]):
         url = method.get_url_http()
@@ -162,6 +177,11 @@ class ApiAsync(object):
         await exchange.publish(message=aio_pika.Message(serialize_message(message).encode('utf-8')),
                                routing_key=get_route_key(method.config.quenue))
 
+        if callback_method_name and callback_method_name in self.methods_callback:
+            self.redis: aioredis.Redis
+            await self.redis.set(message['id'], callback_method_name)
+
+        await connection.close()
         return message['id']
 
     async def make_connection(self, service_name: str = None) -> aio_pika.Connection:
@@ -206,15 +226,11 @@ class ApiAsync(object):
         if method.type_conn == 'AMQP':
             return await self.api_amqp_request(method, params)
 
-    async def process_incoming_message(self, data: dict, channel):
-        queue_callback = None
-
+    async def process_incoming_message(self, data: dict) -> Optional[str]:
         # Проверка наличия такого сервиса в схеме АПИ
         service_callback = data['service_callback']
         try:
             config_service = self.schema[service_callback]['AMQP']['config']
-            exchange_name = config_service['exchange']
-            exchange = await channel.get_exchange(exchange_name)
         except:
             return
         # Проверка доступности метода
@@ -223,48 +239,27 @@ class ApiAsync(object):
                       service_from_name=service_callback, method_name=data['method'])
         except (ServiceMethodNotAllowed, AllServiceMethodsNotAllowed):
             error_message = {'error': f"Метод {data['method']} не доступен из сервиса {service_callback}"}
-            # ch.basic_publish(exchange=config_service['exchange'],
-            #                  routing_key=get_route_key(config_service['quenue']),
-            #                  body=create_callback_message_amqp(message=error_message,
-            #                                                    result=False, response_id=data['id']))
-            # ch.basic_ack(delivery_tag=method_request.delivery_tag)
             body_message = create_callback_message_amqp(error_message, False, data['id'],
-                                                        service_name=self.service_name).encode('utf-8')
-            out_message = aio_pika.Message(body_message)
-            await exchange.publish(
-                out_message,
-                routing_key=config_service['quenue']
-            )
-            return
+                                                        service_name=self.service_name)
+            return body_message
 
         # Вызов функции для обработки метода
-        callback_message = None
         try:
             params_method, response_id, service_callback, method, method_callback = check_params_amqp(
                 self.schema[self.service_name],
                 data
             )
-            callback_message = self.methods_service[data['method']](*check_params_amqp(
+            callback_message = await self.methods_service[data['method']](*check_params_amqp(
                 self.schema[self.service_name],
                 data))
         except KeyError as e:
             error_message = {'error': f"Метод {data['method']} не поддерживается"}
-            body_message = create_callback_message_amqp(error_message, False, data['id']).encode('utf-8')
-            out_message = aio_pika.Message(body_message)
-            await exchange.publish(
-                out_message,
-                routing_key=config_service['quenue']
-            )
-            return
+            body_message = create_callback_message_amqp(error_message, False, data['id'])
+            return body_message
         except Exception as e:
             error_message = {'error': f"Ошибка {str(e)}"}
-            body_message = create_callback_message_amqp(error_message, False, data['id']).encode('utf-8')
-            out_message = aio_pika.Message(body_message)
-            await exchange.publish(
-                out_message,
-                routing_key=config_service['quenue']
-            )
-            return
+            body_message = create_callback_message_amqp(error_message, False, data['id'])
+            return body_message
 
         if callback_message is None:
             return
@@ -277,13 +272,15 @@ class ApiAsync(object):
             raise TypeError(
                 'Функция-обработчик должна возвращать tuple(сообщение, результат сообщения) или None')
 
-        out_message = aio_pika.Message(json_callback.encode('utf-8'))
-        await exchange.publish(
-            out_message,
-            routing_key=get_route_key(config_service['quenue'])
-        )
+        return json_callback
 
     async def process_callback_message(self, message, channel):
         callback_message = CallbackMessage.from_dict(message.body)
-        # self.me callback_message.method
+        self.redis: aioredis.Redis
+        method_name = await self.redis.get(callback_message.response_id)
+        if not method_name and method_name not in self.methods_callback:
+            return
+
+        return self.methods_callback[method_name](callback_message)
+
 

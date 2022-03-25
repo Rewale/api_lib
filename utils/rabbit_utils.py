@@ -44,22 +44,22 @@ def service_amqp_url(service_schema: dict):
     return amqp
 
 
-def json_to_response(json_response: dict, response_id: int, result: bool, method: str = None,
-                     service_callback: str = None):
-    """ Оборачивает строку json в корректный для сервиса вид """
-    correct_json = {
-        'response_id': response_id,
-        'method': method,
-        'service_callback': service_callback,
-        'message': {
-            'result': result,
-            'response': json_response
-        }
-    }
-    response_without_id = json.dumps(correct_json, default=str, ensure_ascii=False)
-    correct_json['id'] = hashlib.md5(response_without_id.encode('utf-8')).digest().hex(' ', 1).upper()
-
-    return json.dumps(correct_json, ensure_ascii=False, default=str)
+# def json_to_response(json_response: dict, response_id: int, result: bool, method: str = None,
+#                      service_callback: str = None):
+#     """ Оборачивает строку json в корректный для сервиса вид """
+#     correct_json = {
+#         'response_id': response_id,
+#         'method': method,
+#         'service_callback': service_callback,
+#         'message': {
+#             'result': result,
+#             'response': json_response
+#         }
+#     }
+#     response_without_id = json.dumps(correct_json, default=str, ensure_ascii=False)
+#     correct_json['id'] = hashlib.md5(response_without_id.encode('utf-8')).digest().hex(' ', 1).upper()
+#
+#     return json.dumps(correct_json, ensure_ascii=False, default=str)
 
 
 def check_schema_decorator(func):
