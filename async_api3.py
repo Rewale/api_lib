@@ -8,6 +8,8 @@ import aiohttp
 import aioredis
 import loguru
 from aio_pika import Message
+
+from utils.messages import create_callback_message_amqp, CallbackMessage
 from utils.rabbit_utils import *
 from utils.validation_utils import MethodApi, InputParam, check_rls, \
     find_method
@@ -157,6 +159,9 @@ class ApiAsync(object):
                         except TypeError as e:
                             self.logger.error(f"[Callback] не указаны доступные методы для обработки колбека")
                             continue
+                        except Exception as e:
+                            self.logger.error(e)
+                            continue
                     else:
                         try:
                             self.logger.info("[Message] Начало обработки сообщения")
@@ -171,7 +176,8 @@ class ApiAsync(object):
 
                     self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
 
-    async def api_http_request(self, method: MethodApi, params: List[InputParam]):
+    @staticmethod
+    async def api_http_request(method: MethodApi, params: List[InputParam]):
         url = method.get_url_http()
         if method.config.auth:
             auth = aiohttp.BasicAuth(method.config.username,
@@ -191,21 +197,16 @@ class ApiAsync(object):
     async def api_amqp_request(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
         connection = await self.make_connection()
         channel: aio_pika.Channel = await connection.channel()
-        try:
-            message = method.get_message_amqp(params, self.service_name, callback_method_name)
-        except Exception as e:
-            print(e)
-
+        message = method.get_message_amqp(params, self.service_name, callback_method_name)
         exchange = await channel.get_exchange(name=method.config.exchange)
-        await exchange.publish(message=aio_pika.Message(serialize_message(message).encode('utf-8')),
+        json_message = message.json()
+        await exchange.publish(message=aio_pika.Message(json_message.encode('utf-8')),
                                routing_key=get_route_key(method.config.quenue))
-
         if callback_method_name and callback_method_name in self.methods_callback:
             self.redis: aioredis.Redis
-            await self.redis.set(message['id'], callback_method_name)
-
+            await self.redis.set(message.id, message.json())
         await connection.close()
-        return message['id']
+        return message.id
 
     async def make_connection(self, service_name: str = None) -> aio_pika.Connection:
         """ Создаем подключение """
@@ -297,8 +298,11 @@ class ApiAsync(object):
     async def process_callback_message(self, message: dict):
         callback_message = CallbackMessage.from_dict(message)
         self.redis: aioredis.Redis
-        method_name = await self.redis.get(callback_message.response_id)
-        if not method_name and method_name not in self.methods_callback:
+        redis_message = await self.redis.get(callback_message.response_id)
+        if not redis_message:
             return
-        method_name = method_name.decode('utf-8')
-        return await self.methods_callback[method_name](callback_message)
+        message: IncomingMessage = IncomingMessage.from_dict(json.loads(redis_message.decode('utf-8')))
+        if not message or message.method_callback not in self.methods_callback:
+            return
+        callback_message.incoming_message = message
+        return await self.methods_callback[message.method_callback](callback_message)

@@ -8,8 +8,8 @@ from utils.custom_exceptions import *
 
 from sync_api import ApiSync
 from tests.test_data import test_schema_rpc
+from utils.messages import create_callback_message_amqp
 from utils.validation_utils import InputParam, convert_date_into_iso
-from utils.rabbit_utils import create_callback_message_amqp
 
 answer = ''
 

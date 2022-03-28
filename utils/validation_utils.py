@@ -6,10 +6,11 @@ import datetime
 import json
 import uuid
 from typing import Union, List, Tuple
-from utils.rabbit_utils import create_hash
 
 from .custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
     ParamValidateFail, WrongTypeParam, WrongSizeParam, AllServiceMethodsNotAllowed
+from .messages import IncomingMessage
+from .utils_message import create_hash
 
 
 class Config(abc.ABC):
@@ -207,7 +208,8 @@ class MethodApi(object):
             # return json.dumps(params, ensure_ascii=True, default=str)
             return params
 
-    def get_message_amqp(self, params: List[InputParam], service_name: str, callback_method_name: str):
+    def get_message_amqp(self, params: List[InputParam], service_name: str,
+                         callback_method_name: str) -> IncomingMessage:
         self.check_params(params)
         if isinstance(self.config, ConfigAMQP):
             message: dict = {'service_callback': service_name,
@@ -218,8 +220,7 @@ class MethodApi(object):
 
             hash_id = create_hash(message)
             message['id'] = str(hash_id)
-
-            return message
+            return IncomingMessage.from_dict(message)
 
 
 def find_method(method_name, service_schema: dict):

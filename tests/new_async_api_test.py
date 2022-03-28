@@ -3,7 +3,7 @@ import unittest
 import uuid
 
 from async_api3 import ApiAsync
-from utils.rabbit_utils import CallbackMessage, IncomingMessage
+from utils.messages import CallbackMessage, IncomingMessage
 from utils.validation_utils import InputParam
 from test_data import test_schema_rpc as test_schema
 
@@ -48,10 +48,14 @@ class TestCase(unittest.TestCase):
                                   user_api='test',
                                   pass_api='test'))
 
+    def setUp(self) -> None:
+        # Запускаем чтение очередей сервисов один раз
+        self.loop.create_task(self.api_callback.listen_queue())
+        self.loop.create_task(self.api_sending.listen_queue())
+
     def test_send_message_amqp(self):
         async def main():
             # Запуск "Сервиса№1"
-            asyncio.create_task(self.api_callback.listen_queue())
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
                                                                   requested_service='CallbackService',
@@ -77,8 +81,7 @@ class TestCase(unittest.TestCase):
 
     def test_send_message_amqp_callback(self):
         async def main():
-            # Запуск "Сервиса№1"
-            asyncio.create_task(self.api_sending.listen_queue())
+            # asyncio.create_task(self.api_callback.listen_queue())
             self.api_sending.methods_callback = {'callbackMethod': callbackMethod}
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
