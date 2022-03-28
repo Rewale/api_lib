@@ -2,17 +2,17 @@ import asyncio
 import unittest
 import uuid
 
-from api_lib.async_api3 import ApiAsync
-from api_lib.utils.rabbit_utils import CallbackMessage, IncomingMessage
-from api_lib.utils.validation_utils import InputParam
+from async_api3 import ApiAsync
+from utils.rabbit_utils import CallbackMessage, IncomingMessage
+from utils.validation_utils import InputParam
 from test_data import test_schema_rpc as test_schema
 
 answer = ''
 callback = ''
+callback_true = ''
 
 
 async def method(message: IncomingMessage):
-    # TODO тип для входящего сообщения
     global answer
     answer = message.params
 
@@ -21,6 +21,12 @@ async def method(message: IncomingMessage):
 
 
 async def callbackMethod(message: CallbackMessage):
+    global callback_true
+    callback_true = message.response
+    return
+
+
+async def NotFoundCallback(message: CallbackMessage):
     global callback
     callback = message.response
     return
@@ -63,7 +69,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(100000000)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека отработала
             self.assertTrue(answer['date'] == '2002-12-12T05:55:33±05:00')
 
@@ -72,7 +78,6 @@ class TestCase(unittest.TestCase):
     def test_send_message_amqp_callback(self):
         async def main():
             # Запуск "Сервиса№1"
-            asyncio.create_task(self.api_callback.listen_queue())
             asyncio.create_task(self.api_sending.listen_queue())
             self.api_sending.methods_callback = {'callbackMethod': callbackMethod}
             # Клиент отправляет сообщение в очередь сервиса#1
@@ -93,18 +98,15 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(1000000)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека отработала
-            print(callback)
-            self.assertTrue(callback != '')
+            self.assertTrue(callback_true != '')
+            print(callback_true)
 
         self.loop.run_until_complete(main())
 
     def test_not_found_callback_method(self):
         async def main():
-            # Запуск "Сервиса№1"
-            asyncio.create_task(self.api_callback.listen_queue())
-            asyncio.create_task(self.api_sending.listen_queue())
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
                                                                   requested_service='CallbackService',
@@ -123,7 +125,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека не отработала
             self.assertTrue(callback == '')
 

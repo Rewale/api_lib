@@ -1,19 +1,15 @@
 import asyncio
 import json
 import traceback
-from typing import List, Union, Optional
+from typing import List, Optional
 
+import aio_pika
+import aiohttp
 import aioredis
 import loguru
 from aio_pika import Message
-
-import loggers
-from api_lib.utils.rabbit_utils import *
-import aio_pika
-
-import aiohttp
-
-from api_lib.utils.validation_utils import MethodApi, InputParam, check_rls, \
+from utils.rabbit_utils import *
+from utils.validation_utils import MethodApi, InputParam, check_rls, \
     find_method
 
 
@@ -195,7 +191,10 @@ class ApiAsync(object):
     async def api_amqp_request(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
         connection = await self.make_connection()
         channel: aio_pika.Channel = await connection.channel()
-        message = method.get_message_amqp(params, self.service_name, callback_method_name)
+        try:
+            message = method.get_message_amqp(params, self.service_name, callback_method_name)
+        except Exception as e:
+            print(e)
 
         exchange = await channel.get_exchange(name=method.config.exchange)
         await exchange.publish(message=aio_pika.Message(serialize_message(message).encode('utf-8')),

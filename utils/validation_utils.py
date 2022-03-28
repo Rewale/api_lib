@@ -6,7 +6,7 @@ import datetime
 import json
 import uuid
 from typing import Union, List, Tuple
-from api_lib.utils.rabbit_utils import create_hash
+from utils.rabbit_utils import create_hash
 
 from .custom_exceptions import ServiceMethodNotAllowed, RequireParamNotSet, ParamNotFound, MethodNotFound, \
     ParamValidateFail, WrongTypeParam, WrongSizeParam, AllServiceMethodsNotAllowed

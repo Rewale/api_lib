@@ -1,3 +1,7 @@
+import hashlib
+import json
+
+
 def serialize_message(message: dict) -> str:
     """ Серилизация сообщения в json"""
     return json.dumps(message, ensure_ascii=True, default=str)
