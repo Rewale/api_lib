@@ -305,4 +305,5 @@ class ApiAsync(object):
         if not message or message.method_callback not in self.methods_callback:
             return
         callback_message.incoming_message = message
+        await self.redis.delete(callback_message.response_id)
         return await self.methods_callback[message.method_callback](callback_message)
