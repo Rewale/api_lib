@@ -55,7 +55,6 @@ class TestCase(unittest.TestCase):
 
     def test_send_message_amqp(self):
         async def main():
-            # Запуск "Сервиса№1"
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
                                                                   requested_service='CallbackService',
@@ -73,7 +72,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
             # Проверяем что функция обработки колбека отработала
             self.assertTrue(answer['date'] == '2002-12-12T05:55:33±05:00')
 
@@ -81,9 +80,7 @@ class TestCase(unittest.TestCase):
 
     def test_send_message_amqp_callback(self):
         async def main():
-            # asyncio.create_task(self.api_callback.listen_queue())
             self.api_sending.methods_callback = {'callbackMethod': callbackMethod}
-            # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
                                                                   requested_service='CallbackService',
                                                                   callback_method_name='callbackMethod',
@@ -101,9 +98,9 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
             # Проверяем что функция обработки колбека отработала
-            self.assertTrue(callback_true != '')
+            self.assertTrue(callback_true['key'] == 'value')
             print(callback_true)
 
         self.loop.run_until_complete(main())
@@ -128,7 +125,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
             # Проверяем что функция обработки колбека не отработала
             self.assertTrue(callback == '')
 

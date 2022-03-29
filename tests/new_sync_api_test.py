@@ -8,17 +8,16 @@ from utils.custom_exceptions import *
 
 from sync_api import ApiSync
 from tests.test_data import test_schema_rpc
-from utils.messages import create_callback_message_amqp
+from utils.messages import create_callback_message_amqp, IncomingMessage
 from utils.validation_utils import InputParam, convert_date_into_iso
 
 answer = ''
 
 
-def method(params: dict, response_id: str, service_callback: str, method: str, method_callback: str):
+def method(message: IncomingMessage):
     global answer
-    answer = params
-    params['CreateDate'] = convert_date_into_iso(datetime.datetime.now())
-    return create_callback_message_amqp(params, True, response_id)
+    answer = message.params
+    return
 
 
 class TestAMQPSyncApi(unittest.TestCase):

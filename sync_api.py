@@ -1,16 +1,14 @@
-import copy
-import json
-import uuid
-from typing import Union, List
+import traceback
+from typing import List, Optional
 
+import loguru
 import pika
 import requests
 from requests.auth import HTTPBasicAuth
 
-from .utils.custom_exceptions import (ServiceNotFound, ServiceMethodNotAllowed, AllServiceMethodsNotAllowed)
-from .utils.rabbit_utils import *
-from .utils.validation_utils import find_method, check_method_available, InputParam, MethodApi, ConfigAMQP, \
-    check_rls, ConfigHTTP, create_callback_message_amqp, serialize_message, create_hash
+from utils.messages import create_callback_message_amqp
+from utils.rabbit_utils import *
+from utils.validation_utils import find_method, InputParam, MethodApi, check_rls
 
 
 class NotFoundParams(Exception):
@@ -19,9 +17,6 @@ class NotFoundParams(Exception):
 
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
-
-    # TODO: добавить логгирования, пользовательский логгер
-
     def __init__(self, service_name: str,
                  user_api,
                  pass_api,
@@ -67,6 +62,7 @@ class ApiSync:
         if schema is not None:
             self.schema = schema
         self.get_schema_sync()
+        self.logger = loguru.logger
 
         check_methods_handlers(self.schema[service_name], methods)
 
@@ -166,10 +162,42 @@ class ApiSync:
                              routing_key=get_route_key(config_service['quenue']),
                              body=json_callback.encode('utf-8'))
 
+        def on_request2(ch, method_request, props, body):
+            ch.basic_ack(delivery_tag=method_request.delivery_tag)
+            try:
+                # Проверка серилизации
+                data = json.loads(body.decode('utf-8'))
+                exchange_name_callback = get_exchange_service(data['service_callback'], self.schema)
+                queue_name_callback = get_queue_service(data['service_callback'], self.schema)
+                self.logger.info(f"[SER] Серилизован {data=}")
+            except Exception as e:
+                self.logger.info(f"[SER] Ошибка серилизации {body.decode('utf-8')}")
+                return
+
+            if 'response_id' in data:
+                # Обработка колбека
+                self.logger.warning('[Callback] У синхронной версии библиотеки не доступна обрабокта колбека')
+                return
+            else:
+                # Обработка обычного сообщения
+                try:
+                    self.logger.info("[Message] Начало обработки сообщения")
+                    out = self.process_incoming_message(data)
+                    out_message = out.encode('utf-8')
+                    self.logger.info(f"[Message] Конец обработки сообщения{out=}")
+                except Exception as e:
+                    self.logger.info(f"[Message] {e}")
+                    return
+
+            ch.basic_publish(exchange=exchange_name_callback,
+                             routing_key=get_route_key(queue_name_callback),
+                             body=out_message)
+            self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
+
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()
 
-        channel.basic_consume(on_message_callback=on_request, queue=self.queue)
+        channel.basic_consume(on_message_callback=on_request2, queue=self.queue)
         channel.start_consuming()
 
     def send_request_api(self, method_name: str,
@@ -187,6 +215,7 @@ class ApiSync:
            RequireParamNotSet - не указан обязательный параметр.
            ParamNotFound - параметр не найден
         Returns:
+            AMQP - Ответ от сервера. HTTP - ID сообщения.
         """
 
         if requested_service not in self.schema:
@@ -195,7 +224,7 @@ class ApiSync:
         check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
 
         if method.type_conn == 'HTTP':
-            return json.loads(self.make_request_api_http(method, params))
+            return self.make_request_api_http(method, params)
 
         if method.type_conn == 'AMQP':
             return self.make_request_api_amqp(method, params)
@@ -217,12 +246,14 @@ class ApiSync:
         headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
         auth = None
         if method.config.auth:
-            auth = (method.config.username, method.config.password)
-
+            auth = HTTPBasicAuth(method.config.username, method.config.password)
+        response = None
         if method.config.type == 'POST':
-            return requests.post(url, headers=headers, data=message, auth=auth).text
+            response = requests.post(url, headers=headers, data=message, auth=auth).text
         if method.config.type == 'GET':
-            return requests.get(url, data=message, headers=headers, auth=auth).text
+            response = requests.get(url, data=message, headers=headers, auth=auth).text
+
+        return response
 
     def _open_amqp_connection_current_service(self):
         connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -251,12 +282,12 @@ class ApiSync:
 
         channel.basic_publish(exchange=method.config.exchange,
                               routing_key=get_route_key(method.config.quenue),
-                              body=serialize_message(message).encode('utf-8'))
+                              body=message.json().encode('utf-8'))
 
         channel.close()
         connection.close()
 
-        return message['id']
+        return message.id
 
     def send_callback(self, service_name: str, message: dict, response_id: str, result: bool,
                       method_callback: str, channel=None):
@@ -287,3 +318,46 @@ class ApiSync:
             channel.basic_publish(exchange=exchange_callback,
                                   routing_key=get_route_key(queue_callback),
                                   body=callback_message.encode('utf-8'))
+
+    def process_incoming_message(self, data: dict) -> Optional[str]:
+        # Проверка наличия такого сервиса в схеме АПИ
+        service_callback = data['service_callback']
+        try:
+            config_service = self.schema[service_callback]['AMQP']['config']
+        except KeyError as e:
+            self.logger.error(f'Нет сервиса {service_callback} в апи')
+            return
+        # Проверка доступности метода
+        try:
+            check_rls(service_from_schema=self.schema[service_callback], service_to_name=self.service_name,
+                      service_from_name=service_callback, method_name=data['method'])
+        except (ServiceMethodNotAllowed, AllServiceMethodsNotAllowed):
+            error_message = {'error': f"Метод {data['method']} не доступен из сервиса {service_callback}"}
+            body_message = create_callback_message_amqp(error_message, False, data['id'],
+                                                        service_name=self.service_name)
+            return body_message
+
+        # Вызов функции для обработки метода
+        try:
+            callback_message = self.methods_service[data['method']](check_params_amqp(
+                self.schema[self.service_name],
+                data))
+        except KeyError as e:
+            error_message = {'error': f"Метод {data['method']} не поддерживается"}
+            body_message = create_callback_message_amqp(error_message, False, data['id'])
+            return body_message
+        except Exception as e:
+            self.logger.error(traceback.format_exc())
+            error_message = {'error': f"Ошибка {str(e)}"}
+            body_message = create_callback_message_amqp(error_message, False, data['id'])
+            return body_message
+
+        if callback_message is None:
+            return
+
+        json_callback = callback_message.json()
+
+        return json_callback
+
+    def process_callback_message(self, data: dict) -> Optional[str]:
+        pass
