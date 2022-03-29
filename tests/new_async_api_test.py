@@ -17,7 +17,8 @@ async def method(message: IncomingMessage):
     answer = message.params
 
     # params['CreateDate'] = convert_date_into_iso(datetime.now())
-    return message.callback_message({'key': 'value'}, True)
+    # return message.callback_message({'key': 'value'}, True)
+    return None
 
 
 async def callbackMethod(message: CallbackMessage):

@@ -166,15 +166,20 @@ class ApiAsync(object):
                         try:
                             self.logger.info("[Message] Начало обработки сообщения")
                             out = await self.process_incoming_message(data)
-                            out_message = Message(out.encode('utf-8'))
+                            if out is None:
+                                out_message = None
+                            else:
+                                out_message = Message(out.encode('utf-8'))
                             self.logger.info(f"[Message] Конец обработки сообщения{out=}")
                         except Exception as e:
                             self.logger.info(f"[Message] {e}")
                             continue
-                    exchange_callback = await channel.get_exchange(exchange_name_callback)
-                    await exchange_callback.publish(out_message, routing_key=get_route_key(queue_name_callback))
 
-                    self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
+                    if out_message is not None:
+                        exchange_callback = await channel.get_exchange(exchange_name_callback)
+                        await exchange_callback.publish(out_message, routing_key=get_route_key(queue_name_callback))
+
+                        self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
 
     @staticmethod
     async def api_http_request(method: MethodApi, params: List[InputParam]):

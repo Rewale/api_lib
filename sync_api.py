@@ -176,23 +176,27 @@ class ApiSync:
 
             if 'response_id' in data:
                 # Обработка колбека
-                self.logger.warning('[Callback] У синхронной версии библиотеки не доступна обрабокта колбека')
+                self.logger.warning('[Callback] У синхронной версии библиотеки не доступна обработка колбека')
                 return
             else:
                 # Обработка обычного сообщения
                 try:
                     self.logger.info("[Message] Начало обработки сообщения")
                     out = self.process_incoming_message(data)
-                    out_message = out.encode('utf-8')
-                    self.logger.info(f"[Message] Конец обработки сообщения{out=}")
+                    if out is None:
+                        out_message = None
+                    else:
+                        out_message = out.encode('utf-8')
+                    self.logger.info(f"[Message] Конец обработки сообщения {out=}")
                 except Exception as e:
                     self.logger.info(f"[Message] {e}")
                     return
 
-            ch.basic_publish(exchange=exchange_name_callback,
-                             routing_key=get_route_key(queue_name_callback),
-                             body=out_message)
-            self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
+            if out_message is not None:
+                ch.basic_publish(exchange=exchange_name_callback,
+                                 routing_key=get_route_key(queue_name_callback),
+                                 body=out_message)
+                self.logger.info(f"Сообщение отправлено в очередь {queue_name_callback}")
 
         connection = self._open_amqp_connection_current_service()
         channel = connection.channel()

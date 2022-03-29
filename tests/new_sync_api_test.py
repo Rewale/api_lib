@@ -17,7 +17,7 @@ answer = ''
 def method(message: IncomingMessage):
     global answer
     answer = message.params
-    return
+    return message.callback_message({'key': 'value'}, True)
 
 
 class TestAMQPSyncApi(unittest.TestCase):
@@ -64,7 +64,6 @@ class TestAMQPSyncApi(unittest.TestCase):
         # Проверяем что сообщение было проверено библиотекой
         # и попало в пользовательский обработчик
         self.assertTrue(answer['date'] == '2002-12-12T05:55:33±05:00')
-        # TODO: чтение очереди колбеков
 
     def test_send_message_http(self):
         api = ApiSync(service_name='BDVPROGR',
