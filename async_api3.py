@@ -199,17 +199,22 @@ class ApiAsync(object):
                 async with session.get(url, data=message) as resp:
                     return await resp.json()
 
-    async def api_amqp_request(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
+    async def api_amqp_request(self, method: MethodApi, params: List[InputParam], callback_method_name: str = '',
+                               additional_data: dict = None):
         connection = await self.make_connection()
         channel: aio_pika.Channel = await connection.channel()
-        message = method.get_message_amqp(params, self.service_name, callback_method_name)
+        try:
+            message = method.get_message_amqp(params, self.service_name, callback_method_name)
+        except Exception as e:
+            print(e)
         exchange = await channel.get_exchange(name=method.config.exchange)
         json_message = message.json()
         await exchange.publish(message=aio_pika.Message(json_message.encode('utf-8')),
                                routing_key=get_route_key(method.config.quenue))
         if callback_method_name and callback_method_name in self.methods_callback:
             self.redis: aioredis.Redis
-            await self.redis.set(message.id, message.json())
+            redis_add_data = message.json(additional_data=additional_data)
+            await self.redis.set(message.id, redis_add_data)
         await connection.close()
         return message.id
 
@@ -229,7 +234,8 @@ class ApiAsync(object):
     async def send_request_api(self, method_name: str,
                                params: List[InputParam],
                                requested_service: str,
-                               callback_method_name: str = None) -> str:
+                               callback_method_name: str = None,
+                               additional_data: dict = None) -> str:
         r"""
         Отправка запроса на сервис
 
@@ -244,6 +250,8 @@ class ApiAsync(object):
            ParamNotFound - параметр не найден
         Returns:
             При AMQP - id сообщения (его хеш-сумма). При HTTP - текст сообщения
+            :param additional_data: Дополнительные данные для запроса по AMQP
+            (буду доступны при вызове метода обработчика колбека)
             :param requested_service:
             :param params:
             :param method_name:
@@ -259,7 +267,7 @@ class ApiAsync(object):
             return await self.api_http_request(method, params)
 
         if method.type_conn == 'AMQP':
-            return await self.api_amqp_request(method, params, callback_method_name)
+            return await self.api_amqp_request(method, params, callback_method_name, additional_data)
 
     async def process_incoming_message(self, data: dict) -> Optional[str]:
         # Проверка наличия такого сервиса в схеме АПИ

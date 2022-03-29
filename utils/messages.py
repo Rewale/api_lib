@@ -6,11 +6,22 @@ from utils.utils_message import create_hash, serialize_message
 
 
 class IncomingMessage:
-    def __init__(self, response_id: str, service_callback: str, params: dict, method_callback: str):
+    def __init__(self, response_id: str, service_callback: str, params: dict, method_callback: str,
+                 additional_data: dict = None):
+        """
+
+        :param response_id: id сообщения
+        :param service_callback: сервис колбека
+        :param params: Параметры запроса
+        :param method_callback: метод для обработки колбека
+        :param additional_data: Дополнительные данные
+         (указываются при обработке колбека и связывании исходящего сообщения и колбека)
+        """
         self.params = params
         self.service_callback = service_callback
         self.id = response_id
         self.method_callback = method_callback
+        self.additional_data = additional_data
 
     @staticmethod
     def from_dict(message: dict):
@@ -18,20 +29,37 @@ class IncomingMessage:
         del params['id']
         del params['method_callback']
         del params['service_callback']
-        return IncomingMessage(
-            response_id=message['id'],
-            service_callback=message['service_callback'],
-            params=params,
-            method_callback=message['method_callback']
-        )
+        if 'additional_data' not in params:
+            return IncomingMessage(
+                response_id=message['id'],
+                service_callback=message['service_callback'],
+                params=params,
+                method_callback=message['method_callback']
+            )
+        else:
+            return IncomingMessage(
+                response_id=message['id'],
+                service_callback=message['service_callback'],
+                params=params,
+                method_callback=message['method_callback'],
+                additional_data=params['additional_data']
+            )
 
-    def json(self):
+    def json(self, additional_data: dict = None):
+        """
+        Проводит сообщение к json
+        :param additional_data: Дополнительные данные запроса
+        :return:
+        """
         correct_json = {
             "method": self.method_callback,
             "service_callback": self.service_callback,
             'method_callback': self.method_callback,
         }
-        correct_json = {**correct_json, **self.params, 'id': self.id}
+        if additional_data:
+            correct_json = {**correct_json, **self.params, 'id': self.id, 'additional_data': additional_data}
+        else:
+            correct_json = {**correct_json, **self.params, 'id': self.id}
 
         return serialize_message(correct_json)
 
