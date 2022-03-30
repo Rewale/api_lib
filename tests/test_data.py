@@ -18,7 +18,7 @@ test_schema_rpc = {
                         'test_not_set': ['str', 32, False],
                         'guid': ['guid', 32, False],
                         'bin': ['bin', 32, True],
-                        'float': ['float', 32, True],
+                        'float': ['float', '8.2', True],
                         'int': ['int', 32, True],
                         'bool': ['bool', None, True],
                         'base64': ['base64', None, True],

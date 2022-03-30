@@ -108,6 +108,13 @@ class Param(object):
         elif value_type == 'float':
             if not isinstance(value, float):
                 raise WrongTypeParam(self.name, 'float')
+            value_str = str(value)
+            common_length = len(value_str.split('.')[0])
+            drob_length = len(value_str.split('.')[1])
+            if common_length > int(size.split('.')[0]):
+                raise WrongSizeParam(self.name, size)
+            if drob_length > int(size.split('.')[1]):
+                raise WrongSizeParam(self.name, size)
         elif value_type == 'bool':
             if not isinstance(value, bool):
                 raise WrongTypeParam(self.name, 'bool')

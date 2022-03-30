@@ -3,7 +3,7 @@ from utils import custom_exceptions
 from utils.rabbit_utils import service_amqp_url
 from utils.validation_utils import check_method_available, find_method, check_date
 
-api_client = ApiSync('GPSPROGR')
+api_client = ApiSync('RECOGNIZEPROGR', '', '', methods={'recognize': 14})
 
 
 def test_allowed_method():

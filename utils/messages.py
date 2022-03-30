@@ -48,7 +48,7 @@ class IncomingMessage:
     def json(self, additional_data: dict = None):
         """
         Проводит сообщение к json
-        :param additional_data: Дополнительные данные запроса
+        :param additional_data: Дополнительные для записи в редис
         :return:
         """
         correct_json = {
@@ -56,6 +56,7 @@ class IncomingMessage:
             "service_callback": self.service_callback,
             'method_callback': self.method_callback,
         }
+        # TODO: id протестировать работу + не учитывать допольнительные данные при хешировании
         if additional_data:
             correct_json = {**correct_json, **self.params, 'id': self.id, 'additional_data': additional_data}
         else:

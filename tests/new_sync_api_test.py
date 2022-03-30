@@ -52,7 +52,7 @@ class TestAMQPSyncApi(unittest.TestCase):
                                               InputParam(name='test_str', value='123'),
                                               InputParam(name='guid', value=str(uuid.uuid4())),
                                               InputParam(name='bin', value=b'123123'),
-                                              InputParam(name='float', value=3333.3333),
+                                              InputParam(name='float', value=3333.33),
                                               InputParam(name='int', value=3333),
                                               InputParam(name='bool', value=True),
                                               InputParam(name='base64', value='base64=312fdvfbg2tgt'),
