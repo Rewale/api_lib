@@ -22,12 +22,16 @@ async def method(message: IncomingMessage):
     return message.callback_message({'key': 'value'}, True)
 
 
+# Методы-обработчики колбеков принимают параметр с типом CallbackMessage
 async def callback_method(message: CallbackMessage):
     global callback_true
     callback_true = message.response
     return
 
 
+# Также колбеки могут быть с доп. данными
+# Указываются при отправке и сохраняются в редис
+# ПОСЛЕ ОБРАБОТКИ КОЛБЕКА ДАННЫЕ ИЗ РЕДИСА УДАЛЯЮТСЯ!!!!
 async def callback_additional_data(message: CallbackMessage):
     global callback_add_data
     callback_add_data = message.incoming_message.additional_data
@@ -92,6 +96,7 @@ class TestCase(unittest.TestCase):
 
     def test_send_message_amqp_callback(self):
         """ Отправка сообщения, обработка сообщения, отправка сообщения между 2 сервисами """
+
         async def main():
             self.api_sending.methods_callback = {'callbackMethod': callback_method}
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
@@ -168,8 +173,9 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ], additional_data={'user_id': 123123}))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека отработала
-            self.assertTrue(callback_true['key'] == 'value')
+            self.assertTrue(callback_add_data != '')
+            self.assertTrue(callback_add_data['user_id'] == 123123)
 
         self.loop.run_until_complete(main())
