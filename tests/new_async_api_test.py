@@ -2,9 +2,9 @@ import asyncio
 import unittest
 import uuid
 
-from async_api import ApiAsync
-from utils.messages import CallbackMessage, IncomingMessage
-from utils.validation_utils import InputParam
+from api_lib.async_api import ApiAsync
+from api_lib.utils.messages import CallbackMessage, IncomingMessage
+from api_lib.utils.validation_utils import InputParam
 from test_data import test_schema_rpc as test_schema
 
 # Переменные для учета обработки колбека
@@ -88,7 +88,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека отработала
             self.assertTrue(answer['date'] == '2002-12-12T05:55:33±05:00')
 
@@ -116,7 +116,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека отработала
             self.assertTrue(callback_true['key'] == 'value')
             print(callback_true)
@@ -145,7 +145,7 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ]))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             # Проверяем что функция обработки колбека не отработала
             self.assertTrue(callback == '')
 

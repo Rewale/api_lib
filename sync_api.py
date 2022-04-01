@@ -6,9 +6,9 @@ import pika
 import requests
 from requests.auth import HTTPBasicAuth
 
-from utils.messages import create_callback_message_amqp
-from utils.rabbit_utils import *
-from utils.validation_utils import find_method, InputParam, MethodApi, check_rls
+from api_lib.utils.messages import create_callback_message_amqp
+from api_lib.utils.rabbit_utils import *
+from api_lib.utils.validation_utils import find_method, InputParam, MethodApi, check_rls
 
 
 class NotFoundParams(Exception):

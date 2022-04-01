@@ -2,7 +2,7 @@ import copy
 import json
 from typing import Union
 
-from utils.utils_message import create_hash, serialize_message
+from api_lib.utils.utils_message import create_hash, serialize_message
 
 
 class IncomingMessage:

@@ -9,9 +9,9 @@ import aioredis
 import loguru
 from aio_pika import Message
 
-from utils.messages import create_callback_message_amqp, CallbackMessage
-from utils.rabbit_utils import *
-from utils.validation_utils import MethodApi, InputParam, check_rls, \
+from api_lib.utils.messages import create_callback_message_amqp, CallbackMessage
+from api_lib.utils.rabbit_utils import *
+from api_lib.utils.validation_utils import MethodApi, InputParam, check_rls, \
     find_method
 
 

@@ -4,12 +4,12 @@ import threading
 import unittest
 import uuid
 from time import sleep
-from utils.custom_exceptions import *
+from api_lib.utils.custom_exceptions import *
 
-from sync_api import ApiSync
-from tests.test_data import test_schema_rpc
-from utils.messages import create_callback_message_amqp, IncomingMessage
-from utils.validation_utils import InputParam, convert_date_into_iso
+from api_lib.sync_api import ApiSync
+from api_lib.tests.test_data import test_schema_rpc
+from api_lib.utils.messages import create_callback_message_amqp, IncomingMessage
+from api_lib.utils.validation_utils import InputParam, convert_date_into_iso
 
 answer = ''
 
