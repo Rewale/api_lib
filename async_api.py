@@ -54,6 +54,8 @@ class ApiAsync(object):
         else:
             await self.get_schema()
 
+        ping = await self.redis.ping()
+
         return self
 
     def __init__(self, service_name: str,
@@ -203,10 +205,7 @@ class ApiAsync(object):
                                additional_data: dict = None):
         connection = await self.make_connection()
         channel: aio_pika.Channel = await connection.channel()
-        try:
-            message = method.get_message_amqp(params, self.service_name, callback_method_name)
-        except Exception as e:
-            print(e)
+        message = method.get_message_amqp(params, self.service_name, callback_method_name)
         exchange = await channel.get_exchange(name=method.config.exchange)
         json_message = message.json()
         await exchange.publish(message=aio_pika.Message(json_message.encode('utf-8')),

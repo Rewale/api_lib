@@ -2,20 +2,23 @@ import asyncio
 import unittest
 import uuid
 
-from async_api3 import ApiAsync
+from async_api import ApiAsync
 from utils.messages import CallbackMessage, IncomingMessage
 from utils.validation_utils import InputParam
 from test_data import test_schema_rpc as test_schema
 
+# Переменные для учета обработки колбека
 answer = ''
 callback = ''
 callback_true = ''
 callback_add_data = ''
 
 
+# Методы - обработчики
 async def method(message: IncomingMessage):
     global answer
     answer = message.params
+    # возврат колбека
     return message.callback_message({'key': 'value'}, True)
 
 
@@ -39,6 +42,8 @@ async def not_found_callback(message: CallbackMessage):
 
 class TestCase(unittest.TestCase):
     loop = asyncio.get_event_loop()
+
+    # инициализация экземпляров для работы с API
     api_callback = loop.run_until_complete(
         ApiAsync.create_api_async(service_name='CallbackService',
                                   schema=test_schema,
@@ -59,6 +64,8 @@ class TestCase(unittest.TestCase):
         self.loop.create_task(self.api_sending.listen_queue())
 
     def test_send_message_amqp(self):
+        """ Отправка сообщения без обработки """
+
         async def main():
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
@@ -69,7 +76,7 @@ class TestCase(unittest.TestCase):
                                                                                  value=str(uuid.uuid4())),
                                                                       InputParam(name='bin', value=b'123123'),
                                                                       InputParam(name='float',
-                                                                                 value=3333.3333),
+                                                                                 value=3333.33),
                                                                       InputParam(name='int', value=3333),
                                                                       InputParam(name='bool', value=True),
                                                                       InputParam(name='base64',
@@ -84,6 +91,7 @@ class TestCase(unittest.TestCase):
         self.loop.run_until_complete(main())
 
     def test_send_message_amqp_callback(self):
+        """ Отправка сообщения, обработка сообщения, отправка сообщения между 2 сервисами """
         async def main():
             self.api_sending.methods_callback = {'callbackMethod': callback_method}
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
@@ -95,7 +103,7 @@ class TestCase(unittest.TestCase):
                                                                                  value=str(uuid.uuid4())),
                                                                       InputParam(name='bin', value=b'123123'),
                                                                       InputParam(name='float',
-                                                                                 value=3333.3333),
+                                                                                 value=3333.33),
                                                                       InputParam(name='int', value=3333),
                                                                       InputParam(name='bool', value=True),
                                                                       InputParam(name='base64',
@@ -111,6 +119,8 @@ class TestCase(unittest.TestCase):
         self.loop.run_until_complete(main())
 
     def test_not_found_callback_method(self):
+        """ Отправка сообщения без указания метода колбека """
+
         async def main():
             # Клиент отправляет сообщение в очередь сервиса#1
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
@@ -122,7 +132,7 @@ class TestCase(unittest.TestCase):
                                                                                  value=str(uuid.uuid4())),
                                                                       InputParam(name='bin', value=b'123123'),
                                                                       InputParam(name='float',
-                                                                                 value=3333.3333),
+                                                                                 value=3333.33),
                                                                       InputParam(name='int', value=3333),
                                                                       InputParam(name='bool', value=True),
                                                                       InputParam(name='base64',
@@ -137,6 +147,8 @@ class TestCase(unittest.TestCase):
         self.loop.run_until_complete(main())
 
     def test_send_message_amqp_callback_add_data(self):
+        """ Отправка сообщения с доп. данными """
+
         async def main():
             self.api_sending.methods_callback = {'callbackMethod': callback_additional_data}
             asyncio.create_task(self.api_sending.send_request_api(method_name='test_method',
@@ -148,7 +160,7 @@ class TestCase(unittest.TestCase):
                                                                                  value=str(uuid.uuid4())),
                                                                       InputParam(name='bin', value=b'123123'),
                                                                       InputParam(name='float',
-                                                                                 value=3333.3333),
+                                                                                 value=3333.33),
                                                                       InputParam(name='int', value=3333),
                                                                       InputParam(name='bool', value=True),
                                                                       InputParam(name='base64',
@@ -156,9 +168,8 @@ class TestCase(unittest.TestCase):
                                                                       InputParam(name='date',
                                                                                  value='2002-12-12T05:55:33±05:00'),
                                                                   ], additional_data={'user_id': 123123}))
-            await asyncio.sleep(100000000)
+            await asyncio.sleep(0.1)
             # Проверяем что функция обработки колбека отработала
             self.assertTrue(callback_true['key'] == 'value')
-            print(callback_true)
 
         self.loop.run_until_complete(main())
