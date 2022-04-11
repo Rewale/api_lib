@@ -1,3 +1,4 @@
+import datetime
 import traceback
 from typing import List, Optional
 
@@ -292,3 +293,7 @@ class ApiSync:
 
     def process_callback_message(self, data: dict) -> Optional[str]:
         pass
+
+
+    # def send_recheck(self, recheck_date:datetime.datetime, message: IncomingMessage):
+    #     self.send_request_api(message.m, )
