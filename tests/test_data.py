@@ -23,6 +23,7 @@ test_schema_rpc = {
                         'bool': ['bool', None, True],
                         'base64': ['base64', None, True],
                         'date': ['date', None, True],
+                        'recheck_date': ['date', None, False],
                     }
 
                 }

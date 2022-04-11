@@ -1,7 +1,9 @@
 import copy
+import datetime
 import json
 from typing import Union
 
+from api_lib.utils import convert_utils
 from api_lib.utils.utils_message import create_hash, serialize_message
 
 
@@ -80,6 +82,12 @@ class IncomingMessage:
                                method=self.method_callback,
                                result=result,
                                response=param)
+
+    def recheck_message(self, recheck_date: datetime.datetime):
+        """ Отправка сообщения обратно в ту же очередь для повторной обработки """
+        # TODO: проверка на recheck_date
+        self.params['recheck_date'] = convert_utils.convert_date_into_iso(recheck_date)
+        return self
 
 
 def create_callback_message_amqp(message: dict,

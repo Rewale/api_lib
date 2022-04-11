@@ -7,6 +7,7 @@ import pika
 import requests
 from requests.auth import HTTPBasicAuth
 
+from api_lib.utils.convert_utils import convert_date_from_iso
 from api_lib.utils.messages import create_callback_message_amqp
 from api_lib.utils.rabbit_utils import *
 from api_lib.utils.validation_utils import find_method, InputParam, MethodApi, check_rls
@@ -18,6 +19,7 @@ class NotFoundParams(Exception):
 
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
+
     def __init__(self, service_name: str,
                  user_api,
                  pass_api,
@@ -91,7 +93,6 @@ class ApiSync:
         """
 
         def on_request2(ch, method_request, props, body):
-            ch.basic_ack(delivery_tag=method_request.delivery_tag)
             try:
                 # Проверка серилизации
                 data = json.loads(body.decode('utf-8'))
@@ -99,14 +100,26 @@ class ApiSync:
                 queue_name_callback = get_queue_service(data['service_callback'], self.schema)
                 self.logger.info(f"[SER] Серилизован {data=}")
             except Exception as e:
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 self.logger.info(f"[SER] Ошибка серилизации {body.decode('utf-8')}")
                 return
 
             if 'response_id' in data:
                 # Обработка колбека
                 self.logger.warning('[Callback] У синхронной версии библиотеки не доступна обработка колбека')
+                ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 return
             else:
+                # Проверка на отложенное сообщение
+                if 'recheck_date' in data:
+                    date_from_iso = convert_date_from_iso(data['recheck_date'])
+                    try:
+                        if date_from_iso > datetime.datetime.now().astimezone():
+                            return
+                    except Exception as e:
+                        pass
+
+                    self.logger.info("[Message] Обработка отложенного сообщения")
                 # Обработка обычного сообщения
                 try:
                     self.logger.info("[Message] Начало обработки сообщения")
@@ -116,8 +129,10 @@ class ApiSync:
                     else:
                         out_message = out.encode('utf-8')
                     self.logger.info(f"[Message] Конец обработки сообщения {out=}")
+                    ch.basic_ack(delivery_tag=method_request.delivery_tag)
                 except Exception as e:
                     self.logger.info(f"[Message] {e}")
+                    ch.basic_ack(delivery_tag=method_request.delivery_tag)
                     return
 
             if out_message is not None:
@@ -287,6 +302,14 @@ class ApiSync:
         if callback_message is None:
             return
 
+        # Отправка сообщения обратно в эту же очередь
+        # для повторной проверки
+        if isinstance(callback_message, IncomingMessage):
+            self.send_request_api(callback_message.method,
+                                  InputParam.from_dict(callback_message.params),
+                                  self.service_name)
+            return
+
         json_callback = callback_message.json()
 
         return json_callback
@@ -294,6 +317,7 @@ class ApiSync:
     def process_callback_message(self, data: dict) -> Optional[str]:
         pass
 
+    def send_recheck(self, recheck_date: datetime.datetime, message: IncomingMessage):
+        message.params['recheck_date'] = recheck_date
+        self.send_request_api(message.method, InputParam.from_dict(message.params), self.service_name)
 
-    # def send_recheck(self, recheck_date:datetime.datetime, message: IncomingMessage):
-    #     self.send_request_api(message.m, )
