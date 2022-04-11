@@ -35,12 +35,12 @@ def check_params_amqp(schema_service: dict, params: dict):
     return IncomingMessage(response_id=params['id'],
                            params=params_method,
                            method_callback=params['method_callback'],
-                           service_callback=params['service_callback'],
-                           method=params['method'])
+                           service_callback=params['service_callback'])
+    # params_method, params['id'], params['service_callback'], params['method'], params['method_callback']
 
 
 def service_amqp_url(service_schema: dict):
-    """ AMQP url из описания сервиса """
+    """ AQMP url из описания сервиса """
     service_schema = service_schema['AMQP']
     login = service_schema['config']['username']
     password = service_schema['config']['password']

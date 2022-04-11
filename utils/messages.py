@@ -9,7 +9,6 @@ from api_lib.utils.utils_message import create_hash, serialize_message
 
 class IncomingMessage:
     def __init__(self, response_id: str, service_callback: str, params: dict, method_callback: str,
-                 method: str,
                  additional_data: dict = None):
         """
 
@@ -21,7 +20,6 @@ class IncomingMessage:
          (указываются при обработке колбека и связывании исходящего сообщения и колбека)
         """
         self.params = params
-        self.method = method
         self.service_callback = service_callback
         self.id = response_id
         self.method_callback = method_callback
@@ -33,14 +31,12 @@ class IncomingMessage:
         del params['id']
         del params['method_callback']
         del params['service_callback']
-        del params['method']
         if 'additional_data' not in params:
             return IncomingMessage(
                 response_id=message['id'],
                 service_callback=message['service_callback'],
                 params=params,
-                method_callback=message['method_callback'],
-                method=message['method']
+                method_callback=message['method_callback']
             )
         else:
             return IncomingMessage(
@@ -48,8 +44,7 @@ class IncomingMessage:
                 service_callback=message['service_callback'],
                 params=params,
                 method_callback=message['method_callback'],
-                additional_data=params['additional_data'],
-                method=message['method']
+                additional_data=params['additional_data']
             )
 
     def json(self, additional_data: dict = None):
@@ -59,10 +54,11 @@ class IncomingMessage:
         :return:
         """
         correct_json = {
-            "method": self.method,
+            "method": self.method_callback,
             "service_callback": self.service_callback,
             'method_callback': self.method_callback,
         }
+        # TODO: id протестировать работу + не учитывать допольнительные данные при хешировании
         if additional_data:
             correct_json = {**correct_json, **self.params, 'id': self.id, 'additional_data': additional_data}
         else:
