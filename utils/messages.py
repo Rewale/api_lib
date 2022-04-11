@@ -64,7 +64,7 @@ class IncomingMessage:
 
         return serialize_message(correct_json)
 
-    def callback_message(self, param: dict, result: bool):
+    def callback_message(self, param: Union[dict, list, str], result: bool):
         """
 
         :param param: Выходные параметры
@@ -115,7 +115,7 @@ class CallbackMessage:
                  service_callback: str,
                  response_id: str,
                  result: bool,
-                 response: Union[str, dict],
+                 response: Union[str, dict, list],
                  id: str = None,
                  incoming_message: IncomingMessage = None):
         """
