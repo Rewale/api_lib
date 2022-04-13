@@ -103,32 +103,32 @@ class TestAMQPSyncApi(unittest.TestCase):
                                        requested_service='TAFPROGR',
                                        params=[InputParam(name='format', value='json')])['API']
 
-    def test_recheck(self):
-        """ Каждый раз откладываем сообщение на 2 секунды """
-        test_schema = test_schema_rpc
-        api_callback = ApiSync(service_name='CallbackService', schema=test_schema,
-                               methods={'test_method': recheck_method}, pass_api='test', user_api='test')
-        api_sending = ApiSync('SendService', schema=test_schema, user_api='test', pass_api='test')
-        self.thread = threading.Thread(target=api_callback.listen_queue)
-        self.thread.start()
-
-        # Клиент отправляет сообщение в очередь сервиса#1
-        api_sending.send_request_api(method_name='test_method',
-                                     requested_service='CallbackService',
-                                     params=[
-                                         InputParam(name='test_str', value='123'),
-                                         InputParam(name='guid', value=str(uuid.uuid4())),
-                                         InputParam(name='bin', value=b'123123'),
-                                         InputParam(name='float', value=3333.33),
-                                         InputParam(name='int', value=3333),
-                                         InputParam(name='bool', value=True),
-                                         InputParam(name='base64', value='base64=312fdvfbg2tgt'),
-                                         InputParam(name='date', value='2002-12-12T05:55:33±05:00'),
-                                     ])
-
-        sleep(10)
-        global count_recheck
-        # Проверяем что сообщение было проверено библиотекой
-        # и попало в пользовательский обработчик несколько раз
-        self.assertTrue(2 <= count_recheck <= 5)
-        print(f"Сообщений: {count_recheck}")
+    # def test_recheck(self):
+    #     """ Каждый раз откладываем сообщение на 2 секунды """
+    #     test_schema = test_schema_rpc
+    #     api_callback = ApiSync(service_name='CallbackService', schema=test_schema,
+    #                            methods={'test_method': recheck_method}, pass_api='test', user_api='test')
+    #     api_sending = ApiSync('SendService', schema=test_schema, user_api='test', pass_api='test')
+    #     self.thread = threading.Thread(target=api_callback.listen_queue)
+    #     self.thread.start()
+    #
+    #     # Клиент отправляет сообщение в очередь сервиса#1
+    #     api_sending.send_request_api(method_name='test_method',
+    #                                  requested_service='CallbackService',
+    #                                  params=[
+    #                                      InputParam(name='test_str', value='123'),
+    #                                      InputParam(name='guid', value=str(uuid.uuid4())),
+    #                                      InputParam(name='bin', value=b'123123'),
+    #                                      InputParam(name='float', value=3333.33),
+    #                                      InputParam(name='int', value=3333),
+    #                                      InputParam(name='bool', value=True),
+    #                                      InputParam(name='base64', value='base64=312fdvfbg2tgt'),
+    #                                      InputParam(name='date', value='2002-12-12T05:55:33±05:00'),
+    #                                  ])
+    #
+    #     sleep(10)
+    #     global count_recheck
+    #     # Проверяем что сообщение было проверено библиотекой
+    #     # и попало в пользовательский обработчик несколько раз
+    #     self.assertTrue(2 <= count_recheck <= 5)
+    #     print(f"Сообщений: {count_recheck}")

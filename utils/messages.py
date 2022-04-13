@@ -143,7 +143,10 @@ class CallbackMessage:
         self.response_id = response_id
         self.result = result
         if isinstance(response, str):
-            self.response = json.loads(response)
+            try:
+                self.response = json.loads(response)
+            except json.JSONDecodeError:
+                self.response = response
         else:
             self.response = response
 
@@ -152,7 +155,8 @@ class CallbackMessage:
         correct_json = {
             'response_id': self.response_id,
             'service_callback': self.service_callback,
-            'method': self.method,
+            # 'method': self.method,
+            'method': None,
             'message': {
                 'result': self.result,
                 'response': self.response
