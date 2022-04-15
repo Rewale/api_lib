@@ -292,3 +292,17 @@ class ApiSync:
 
     def process_callback_message(self, data: dict) -> Optional[str]:
         pass
+
+    def __make_request_api_amqp_without_validation(self, message: str, service_name: str):
+        r"""
+            Запрос на определенный метод сервиса через кролика без валидации.
+        """
+        connection = self._open_amqp_connection_current_service()
+        channel = connection.channel()
+
+        channel.basic_publish(exchange=method.config.exchange,
+                              routing_key=get_route_key(service_name),
+                              body=message.encode('utf-8'))
+
+        channel.close()
+        connection.close()
