@@ -1,4 +1,10 @@
+import base64
 import datetime
+import json
+
+
+def base64_to_json(base64_string: str):
+    return json.loads(base64.b64decode(base64_string.replace('base64=', '')))
 
 
 def convert_date_into_iso(convert_date: datetime.datetime) -> str:

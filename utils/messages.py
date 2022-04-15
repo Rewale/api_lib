@@ -9,7 +9,7 @@ from api_lib.utils.utils_message import create_hash, serialize_message
 
 class IncomingMessage:
     def __init__(self, response_id: str, service_callback: str, params: dict, method_callback: str,
-                 additional_data: dict = None):
+                 additional_data: dict = None, method=None):
         """
 
         :param response_id: id сообщения
@@ -22,6 +22,7 @@ class IncomingMessage:
         self.params = params
         self.service_callback = service_callback
         self.id = response_id
+        self.method = method
         self.method_callback = method_callback
         self.additional_data = additional_data
 
@@ -54,7 +55,7 @@ class IncomingMessage:
         :return:
         """
         correct_json = {
-            "method": self.method_callback,
+            "method": self.method,
             "service_callback": self.service_callback,
             'method_callback': self.method_callback,
         }
