@@ -6,6 +6,7 @@ import pika
 import requests
 from requests.auth import HTTPBasicAuth
 
+from api_lib.utils.convert_utils import add_progr
 from api_lib.utils.messages import create_callback_message_amqp
 from api_lib.utils.rabbit_utils import *
 from api_lib.utils.validation_utils import find_method, InputParam, MethodApi, check_rls
@@ -21,6 +22,7 @@ class ApiSync:
                  user_api,
                  pass_api,
                  methods: dict = None,
+                 is_test=True,
                  url='http://apidev.mezex.lan/getApiStructProgr',
                  schema: dict = None):
         r"""
@@ -38,6 +40,9 @@ class ApiSync:
         -> (сообщение: dict, результат: bool):
         """
         self.service_name = service_name
+        self.is_test = is_test
+        if is_test:
+            self.service_name = add_progr(service_name)
 
         # Данные для получения схемы апи
         self.url = url
@@ -64,7 +69,7 @@ class ApiSync:
         self.get_schema_sync()
         self.logger = loguru.logger
 
-        check_methods_handlers(self.schema[service_name], methods)
+        check_methods_handlers(self.schema[self.service_name], methods)
 
     def get_schema_sync(self) -> dict:
         if self.schema is None:
@@ -150,20 +155,21 @@ class ApiSync:
         """
         if isinstance(params, InputParam):
             params = [params]
-
+        if self.is_test:
+            requested_service = add_progr(requested_service)
         if requested_service not in self.schema:
             raise ServiceNotFound
         method = find_method(method_name, self.schema[requested_service])
         check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
 
         if method.type_conn == 'HTTP':
-            return self.make_request_api_http(method, params)
+            return self._make_request_api_http(method, params)
 
         if method.type_conn == 'AMQP':
-            return self.make_request_api_amqp(method, params)
+            return self._make_request_api_amqp(method, params)
 
     @staticmethod
-    def make_request_api_http(method: MethodApi, params: List[InputParam]) -> str:
+    def _make_request_api_http(method: MethodApi, params: List[InputParam]) -> str:
         r"""
         Запрос на определенный метод сервиса через http.
 
@@ -196,7 +202,7 @@ class ApiSync:
 
         return connection
 
-    def make_request_api_amqp(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
+    def _make_request_api_amqp(self, method: MethodApi, params: List[InputParam], callback_method_name: str = ''):
         r"""
         Запрос на определенный метод сервиса через кролика.
 

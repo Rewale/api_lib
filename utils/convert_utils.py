@@ -27,3 +27,9 @@ def decode_b64(message: str):
     message_bytes = message.encode('utf-8')
     base64_bytes = base64.b64encode(message_bytes)
     return 'base64=' + base64_bytes.decode('utf-8')
+
+
+def add_progr(service_name: str):
+    if service_name.endswith("PROGR"):
+        return service_name
+    return f'{service_name}PROGR'
