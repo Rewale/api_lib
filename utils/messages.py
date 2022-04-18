@@ -32,12 +32,14 @@ class IncomingMessage:
         del params['id']
         del params['method_callback']
         del params['service_callback']
+        del params['method']
         if 'additional_data' not in params:
             return IncomingMessage(
                 response_id=message['id'],
                 service_callback=message['service_callback'],
                 params=params,
-                method_callback=message['method_callback']
+                method_callback=message['method_callback'],
+                method=message['method'],
             )
         else:
             return IncomingMessage(

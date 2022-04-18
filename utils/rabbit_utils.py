@@ -11,7 +11,7 @@ from .validation_utils import find_method, InputParam
 
 def get_route_key(queue_name: str):
     """ Оборачивает имя очереди в # """
-    return f'#{queue_name}#'
+    return f'#{queue_name.lower()}#'
 
 
 def check_params_amqp(schema_service: dict, params: dict):
