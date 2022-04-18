@@ -21,3 +21,9 @@ def convert_date_from_iso(convert_date: str) -> datetime.datetime:
     :return: Строковое представление даты в исо формате YYYY-MM-DDThh:mm:ss±hh:mm
     """
     return datetime.datetime.fromisoformat(convert_date.replace('±', '+'))
+
+
+def decode_b64(message: str):
+    message_bytes = message.encode('utf-8')
+    base64_bytes = base64.b64encode(message_bytes)
+    return 'base64=' + base64_bytes.decode('utf-8')
