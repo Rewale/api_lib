@@ -1,5 +1,10 @@
 class ServiceNotFound(Exception):
-    pass
+    def __init__(self, service_name=None):
+        self.service_name = service_name
+
+    def __str__(self):
+        if self.service_name is not None:
+            return f'{self.service_name} не найден'
 
 
 class ParamNotFound(Exception):

@@ -158,7 +158,7 @@ class ApiSync:
         if self.is_test:
             requested_service = add_progr(requested_service)
         if requested_service not in self.schema:
-            raise ServiceNotFound
+            raise ServiceNotFound(service_name=requested_service)
         method = find_method(method_name, self.schema[requested_service])
         check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
 

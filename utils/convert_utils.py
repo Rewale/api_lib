@@ -30,6 +30,4 @@ def decode_b64(message: str):
 
 
 def add_progr(service_name: str):
-    if service_name.endswith("PROGR"):
-        return service_name
     return f'{service_name}PROGR'

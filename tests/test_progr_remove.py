@@ -4,7 +4,7 @@ import uuid
 from api_lib.sync_api import ApiSync
 import unittest
 
-from api_lib.utils.custom_exceptions import AllServiceMethodsNotAllowed
+from api_lib.utils.custom_exceptions import AllServiceMethodsNotAllowed, ServiceNotFound
 from api_lib.utils.rabbit_utils import get_queue_service, get_exchange_service
 from api_lib.utils.validation_utils import InputParam
 
@@ -28,7 +28,7 @@ class SetProgrTestCase(unittest.TestCase):
                                       requested_service='KAA')
 
     def test_send_KAAPROGR(self):
-        with self.assertRaises(AllServiceMethodsNotAllowed):
+        with self.assertRaises(ServiceNotFound):
             self.api.send_request_api(method_name='update_client',
                                       params=[
                                           InputParam(name='guid', value=str(uuid.uuid4())),
