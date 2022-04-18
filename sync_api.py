@@ -148,6 +148,8 @@ class ApiSync:
         Returns:
             AMQP - Ответ от сервера. HTTP - ID сообщения.
         """
+        if isinstance(params, InputParam):
+            params = [params]
 
         if requested_service not in self.schema:
             raise ServiceNotFound
