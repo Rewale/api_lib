@@ -57,8 +57,6 @@ class Param(object):
         self.name = name
 
     def check_value(self, value: any):
-        # TODO проверка на бинарный тип, md5
-        # TODO более подробная обработка ошибок валидации данных
         value_type = self.type
         size = self.length
 
