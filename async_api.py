@@ -9,6 +9,7 @@ import aioredis
 import loguru
 from aio_pika import Message
 
+from api_lib.utils.convert_utils import add_progr
 from api_lib.utils.messages import create_callback_message_amqp, CallbackMessage
 from api_lib.utils.rabbit_utils import *
 from api_lib.utils.validation_utils import MethodApi, InputParam, check_rls, \
@@ -31,7 +32,7 @@ class ApiAsync(object):
                                methods_callback: dict = None,
                                url='http://apidev.mezex.lan/getApiStructProgr',
                                redis_url: str = 'redis://127.0.0.1:6379',
-                               schema: dict = None):
+                               schema: dict = None, is_test=True):
         r"""
          Создание экземпляра класса
          Args:
@@ -55,7 +56,7 @@ class ApiAsync(object):
         :param redis_url:
         :param methods_callback:
          """
-        self = ApiAsync(service_name, user_api, pass_api, redis_url, methods, url, schema, methods_callback)
+        self = ApiAsync(service_name, user_api, pass_api, redis_url, methods, url, schema, methods_callback, is_test)
         # Для тестов можно загружать словарь
         self.schema = None
         if schema is not None:
@@ -74,7 +75,7 @@ class ApiAsync(object):
                  methods: dict = None,
                  url='http://apidev.mezex.lan/getApiStructProgr',
                  schema: dict = None,
-                 methods_callback=None):
+                 methods_callback=None, is_test=True):
         r"""
         Args:
             user_api: логин для получения схемы
@@ -90,6 +91,9 @@ class ApiAsync(object):
         method_callback: str)
         -> (сообщение: dict, результат: bool):
         """
+        self.is_test = is_test
+        if is_test:
+            self.service_name = add_progr(service_name)
         if methods_callback is None:
             methods_callback = {}
         self.methods_callback = methods_callback
@@ -267,6 +271,9 @@ class ApiAsync(object):
 
         if requested_service not in self.schema:
             raise ServiceNotFound
+        
+        if self.is_test:
+            requested_service = add_progr(requested_service)
         method = find_method(method_name, self.schema[requested_service])
         check_rls(self.schema[self.service_name], requested_service, self.service_name, method_name)
 
