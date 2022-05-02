@@ -94,12 +94,13 @@ class ApiAsync(object):
         self.is_test = is_test
         if is_test:
             self.service_name = add_progr(service_name)
+        else:
+            self.service_name = service_name
         if methods_callback is None:
             methods_callback = {}
         self.methods_callback = methods_callback
         self.channel = None
         self.connection = None
-        self.service_name = service_name
         self.redis_url = redis_url
         self.redis = None
 
