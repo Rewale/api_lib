@@ -1,7 +1,7 @@
 import asyncio
 import json
 import traceback
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 import aio_pika
 import aiohttp
@@ -16,6 +16,15 @@ from api_lib.utils.validation_utils import MethodApi, InputParam, check_rls, \
 
 
 class ApiAsync(object):
+
+    def callback_func(self, name: str):
+        """ Декоратор для добавления обработчика колбека """
+        def actual_decorator(func):
+            self.methods_callback[name] = func
+            return func
+
+        return actual_decorator
+
     @classmethod
     async def create_api_async(cls, user_api, pass_api, service_name: str,
                                methods: dict = None,
@@ -67,7 +76,6 @@ class ApiAsync(object):
                  schema: dict = None,
                  methods_callback=None):
         r"""
-        НИЗЯ!
         Args:
             user_api: логин для получения схемы
             pass_api: пароль для получения схемы
