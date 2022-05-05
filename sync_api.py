@@ -66,7 +66,7 @@ class ApiSync:
         # Для тестов можно загружать словарь
         self.schema = None
         if schema is not None:
-            self.schema = schema
+            self.schema = schem
         self.get_schema_sync()
         self.logger = rabbit_logger
         check_methods_handlers(self.schema[self.service_name], methods)
