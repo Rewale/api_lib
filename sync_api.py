@@ -187,6 +187,28 @@ class ApiSync:
         if method.type_conn == 'AMQP':
             return self._make_request_api_amqp(method, params)
 
+    def get_url(self, filename, extension):
+        if self.is_test:
+            files = 'http://192.168.0.7/filesprogr/index.php?operation=write' \
+                       '&extension=%s&author=rosreestr&typedoc=1&filename=%s'
+        else:
+            files = 'http://192.168.0.7/files/index.php?operation=write' \
+                       '&extension=%s&author=rosreestr&typedoc=1&filename=%s'
+        return files % (extension, filename)
+    
+    def send_file_to_service(self, filename, extension, file_data_base64):
+        """ Сохраняет файл в файловый сервис """
+        self.logger.info(f"[SEND_FILE] Отправка файла в файловый сервис")
+        url = self.get_url(filename, extension)
+        try:
+            image_uuid = requests.post(url, data=file_data_base64).text
+        except Exception as e:
+            self.logger.info(f"[ACCIDENT-I] Ошибка отправки изображения: {str(e)}")
+            return "error"
+
+        self.logger.info(f"[SEND_FILE] UUID файла на сервисе {image_uuid}")
+        return image_uuid
+
     @staticmethod
     def _make_request_api_http(method: MethodApi, params: List[InputParam]) -> str:
         r"""
