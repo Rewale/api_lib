@@ -24,6 +24,7 @@ class ApiSync:
                  pass_api,
                  methods: dict = None,
                  is_test=True,
+                 create_queue_exchange=False,
                  url='http://apidev.mezex.lan/getApiStructProgr',
                  schema: dict = None):
         r"""
@@ -32,6 +33,7 @@ class ApiSync:
             pass_api: пароль для получения схемы
             url: адрес для схемы
             service_name: Название текущего сервиса
+            create_queue_exchange: Создавать и связывать очередь и обменник сервиса
             methods: Словарь обработчиков для каждого метода сервиса {название метода: функция}
         функция(params: dict,
         response_id: str,
@@ -71,6 +73,8 @@ class ApiSync:
         self.logger = loguru.logger
 
         check_methods_handlers(self.schema[self.service_name], methods)
+        if create_queue_exchange:
+            self.create_queue_exchange_bind()
 
     def get_schema_sync(self) -> dict:
         if self.schema is None:
@@ -87,13 +91,19 @@ class ApiSync:
 
         return self.schema
 
-    def create_queue_exchange(self):
-        # TODO:
-        pass
+    def create_queue_exchange_bind(self):
+        connection = self._open_amqp_connection_current_service()
+        channel = connection.channel()
 
-    def bind_exchange(self):
-        # TODO:
-        pass
+        channel.exchange_declare(self.exchange)
+        channel.queue_declare(self.queue)
+        channel.queue_bind(
+            queue=self.queue,
+            exchange=self.exchange,
+            routing_key=get_route_key(self.queue)
+        )
+        channel.close()
+        connection.close()
 
     def listen_queue(self):
         """
