@@ -7,6 +7,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from api_lib.utils.convert_utils import add_progr
+from api_lib.utils.loggers import rabbit_logger
 from api_lib.utils.messages import create_callback_message_amqp
 from api_lib.utils.rabbit_utils import *
 from api_lib.utils.validation_utils import find_method, InputParam, MethodApi, check_rls
@@ -70,8 +71,7 @@ class ApiSync:
         if schema is not None:
             self.schema = schema
         self.get_schema_sync()
-        self.logger = loguru.logger
-
+        self.logger = rabbit_logger
         check_methods_handlers(self.schema[self.service_name], methods)
         if create_queue_exchange:
             self.create_queue_exchange_bind()
