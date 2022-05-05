@@ -18,6 +18,7 @@ class NotFoundParams(Exception):
 
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
+
     def __init__(self, service_name: str,
                  user_api,
                  pass_api,
@@ -85,6 +86,14 @@ class ApiSync:
         self.credentials = pika.PlainCredentials(self.user_amqp, self.pass_amqp)
 
         return self.schema
+
+    def create_queue_exchange(self):
+        # TODO:
+        pass
+
+    def bind_exchange(self):
+        # TODO:
+        pass
 
     def listen_queue(self):
         """
