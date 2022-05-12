@@ -19,11 +19,13 @@ class NotFoundParams(Exception):
 
 class ApiSync:
     """ Синхронный класс для работы с апи и другими сервисами """
+
     def __init__(self, service_name: str,
                  user_api,
                  pass_api,
                  methods: dict = None,
                  is_test=True,
+                 create_queue_exchange=False,
                  url='http://apidev.mezex.lan/getApiStructProgr',
                  schema: dict = None,
                  heartbeat: int = 60):
@@ -33,6 +35,7 @@ class ApiSync:
             pass_api: пароль для получения схемы
             url: адрес для схемы
             service_name: Название текущего сервиса
+            create_queue_exchange: Создавать и связывать очередь и обменник сервиса
             methods: Словарь обработчиков для каждого метода сервиса {название метода: функция}
         функция(params: dict,
         response_id: str,
@@ -72,6 +75,8 @@ class ApiSync:
         self.get_schema_sync()
         self.logger = rabbit_logger
         check_methods_handlers(self.schema[self.service_name], methods)
+        if create_queue_exchange:
+            self.create_queue_exchange_bind()
 
     def get_schema_sync(self) -> dict:
         if self.schema is None:
@@ -87,6 +92,20 @@ class ApiSync:
         self.credentials = pika.PlainCredentials(self.user_amqp, self.pass_amqp)
 
         return self.schema
+
+    def create_queue_exchange_bind(self):
+        connection = self._open_amqp_connection_current_service()
+        channel = connection.channel()
+
+        channel.exchange_declare(self.exchange)
+        channel.queue_declare(self.queue)
+        channel.queue_bind(
+            queue=self.queue,
+            exchange=self.exchange,
+            routing_key=get_route_key(self.queue)
+        )
+        channel.close()
+        connection.close()
 
     def listen_queue(self):
         """
@@ -169,6 +188,28 @@ class ApiSync:
 
         if method.type_conn == 'AMQP':
             return self._make_request_api_amqp(method, params)
+
+    def get_url(self, filename, extension):
+        if self.is_test:
+            files = 'http://192.168.0.7/filesprogr/index.php?operation=write' \
+                       '&extension=%s&author=rosreestr&typedoc=1&filename=%s'
+        else:
+            files = 'http://192.168.0.7/files/index.php?operation=write' \
+                       '&extension=%s&author=rosreestr&typedoc=1&filename=%s'
+        return files % (extension, filename)
+    
+    def send_file_to_service(self, filename, extension, file_data_base64):
+        """ Сохраняет файл в файловый сервис """
+        self.logger.info(f"[SEND_FILE] Отправка файла в файловый сервис")
+        url = self.get_url(filename, extension)
+        try:
+            image_uuid = requests.post(url, data=file_data_base64).text
+        except Exception as e:
+            self.logger.info(f"[ACCIDENT-I] Ошибка отправки изображения: {str(e)}")
+            return "error"
+
+        self.logger.info(f"[SEND_FILE] UUID файла на сервисе {image_uuid}")
+        return image_uuid
 
     @staticmethod
     def _make_request_api_http(method: MethodApi, params: List[InputParam]) -> str:

@@ -33,20 +33,20 @@ class TestAMQPSyncApi(unittest.TestCase):
     test_schema = test_schema_rpc
 
     api_callback = ApiSync(service_name='CallbackService', schema=test_schema,
-                           methods={'test_method': method}, pass_api='test', user_api='test')
-    api_sending = ApiSync('SendService', schema=test_schema, user_api='test', pass_api='test')
+                           methods={'test_method': method}, pass_api='test', user_api='test', is_test=False)
+    api_sending = ApiSync('SendService', schema=test_schema, user_api='test', pass_api='test', is_test=False)
     thread: threading.Thread
 
     def test_method_not_set(self):
         with self.assertRaises(MethodNotSet):
             api_callback = ApiSync(service_name='CallbackService', schema=self.test_schema,
-                                   methods={'test_not_exist': method}, pass_api='test', user_api='test')
+                                   methods={'test_not_exist': method}, pass_api='test', user_api='test', is_test=False)
 
     def test_methods_not_set(self):
-        api_sending = ApiSync('SendService', schema=self.test_schema, user_api='test', pass_api='test')
+        api_sending = ApiSync('SendService', schema=self.test_schema, user_api='test', pass_api='test', is_test=False)
         with self.assertRaises(MethodsNotSet):
             api_callback = ApiSync(service_name='CallbackService', schema=self.test_schema,
-                                   pass_api='test', user_api='test')
+                                   pass_api='test', user_api='test', is_test=False)
 
     def test_send_message_amqp(self):
         # Запуск "Сервиса№1"
