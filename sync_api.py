@@ -25,7 +25,8 @@ class ApiSync:
                  methods: dict = None,
                  is_test=True,
                  url='http://apidev.mezex.lan/getApiStructProgr',
-                 schema: dict = None):
+                 schema: dict = None,
+                 heartbeat: int = 60):
         r"""
         Args:
             user_api: логин для получения схемы
@@ -40,6 +41,7 @@ class ApiSync:
         method_callback: str)
         -> (сообщение: dict, результат: bool):
         """
+        self.heartbeat = heartbeat
         self.service_name = service_name
         self.is_test = is_test
         if is_test:
@@ -198,6 +200,7 @@ class ApiSync:
         connection = pika.BlockingConnection(pika.ConnectionParameters(
             host=self.address_amqp,
             credentials=self.credentials,
+            heartbeat=self.heartbeat,
             port=self.port))
 
         return connection
